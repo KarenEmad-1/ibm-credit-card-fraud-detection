@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.data import TARGET, load_cards, load_users
+from src.data import TARGET, join_users_cards
 
 # ---------------------------------------------------------------- split
 
@@ -84,7 +84,8 @@ def add_transaction_features(df: pd.DataFrame) -> pd.DataFrame:
     # Shortcut candidate, kept only for the ablation. Online rows have no state:
     # make that explicit instead of leaving NaN.
     out["merchant_state"] = state.fillna("ONLINE_OR_MISSING").astype("category")
-    out["mcc"] = df["MCC"].astype("category")
+    # MCC is a label: string levels (Parquet turns integer-level categories back into ints)
+    out["mcc"] = df["MCC"].astype(str).astype("category")
 
     errors = df["Errors?"].astype("string")
     out["has_error"] = errors.notna().astype("int8")
@@ -176,10 +177,8 @@ def add_card_history_features(df: pd.DataFrame, feats: pd.DataFrame) -> pd.DataF
 
 def add_card_and_user_attributes(df: pd.DataFrame, feats: pd.DataFrame) -> pd.DataFrame:
     """Card attributes (fixed per card) and user snapshots (ablation only)."""
-    keys = df[["User", "Card"]]
-    cards = keys.merge(load_cards(), on=["User", "Card"], how="left", validate="many_to_one")
-    users = keys[["User"]].merge(load_users(), on="User", how="left", validate="many_to_one")
-    assert len(cards) == len(df) == len(users)
+    # Checked join: raises MergeError on duplicate/unmatched keys or row-count changes
+    cards = users = join_users_cards(df)
 
     out = feats.copy()
     out["card_brand"] = pd.Categorical(cards["Card Brand"])

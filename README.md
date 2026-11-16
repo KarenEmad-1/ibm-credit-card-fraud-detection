@@ -2,7 +2,7 @@
 
 End-to-end fraud detection on **24.4 million** credit card transactions (IBM's synthetic dataset, 2,000 users, 1991–2020). The work starts with a careful EDA and a leakage-checked feature pipeline before any model is trained.
 
-> **Status:** EDA ✅ · Phase 1 (split and features) ✅ · Phase 2 (baseline) next
+> **Status:** EDA ✅ · Split and features ✅ · Feature selection ✅ · Models next
 
 ## Key findings so far
 
@@ -14,6 +14,9 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 | **2020 has 0 frauds** in 336k transactions (~400 expected) | Labels look missing, so 2020 is excluded from evaluation |
 | A first purchase at a new merchant is **12.8× more likely** to be fraud | Per-card history features carry real signal |
 | Missing merchant state/zip is structural (online transactions) | Encoded explicitly, not imputed |
+| Four selection methods agree on dropping 6 of 36 features, with no loss in validation PR-AUC | Every model uses the same 30 selected features |
+| Adding `merchant_state` raises validation PR-AUC from 0.73 to 0.90 | The geographic shortcut is large, so results are reported with and without it |
+| User snapshot features (age, income, FICO…) add nothing | Excluded: leakage risk with no benefit |
 
 ## Approach
 
@@ -25,15 +28,15 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 ## Roadmap
 
 1. ~~EDA~~ ([`01_eda.ipynb`](notebooks/01_eda.ipynb))
-2. ~~Chronological split and feature engineering~~ ([`02_features_split.ipynb`](notebooks/02_features_split.ipynb))
-3. Class-weighted logistic regression baseline
-4. Gradient-boosted trees (LightGBM / XGBoost)
-5. Time-aware hyperparameter tuning and threshold selection on validation
-6. Ablations: geographic shortcut, user-snapshot leakage, per-segment performance
-7. Single final evaluation on the 2019 test year, with bootstrap confidence intervals
-8. SHAP interpretation on held-out data
+2. ~~Checked table joins, chronological split and feature engineering~~ ([`02_features_split.ipynb`](notebooks/02_features_split.ipynb))
+3. ~~Feature selection with four techniques: correlation + mutual information, L1 logistic regression, CatBoost importance, permutation importance~~ ([`03_feature_selection.ipynb`](notebooks/03_feature_selection.ipynb))
+4. Traditional models: class-weighted logistic regression and Random Forest, then tuning
+5. CatBoost, then tuning
+6. FT-Transformer (deep learning for tabular data), then tuning
+7. Ablations: geographic shortcut, user-snapshot leakage, per-segment performance
+8. Final evaluation of all models on the 2019 test year (once), with bootstrap confidence intervals and SHAP
 
-The reasoning behind each phase is in section 8 of the EDA notebook.
+Every model uses the same split, the same metrics (PR-AUC, recall at fixed precision) and a decision threshold chosen on validation. The original reasoning behind the phases is in section 8 of the EDA notebook.
 
 ## Project structure
 
@@ -43,11 +46,15 @@ The reasoning behind each phase is in section 8 of the EDA notebook.
 │   └── cache/        # generated Parquet files (not committed)
 ├── notebooks/
 │   ├── 01_eda.ipynb
-│   └── 02_features_split.ipynb
-├── reports/figures/
+│   ├── 02_features_split.ipynb
+│   └── 03_feature_selection.ipynb
+├── reports/
+│   ├── figures/
+│   └── feature_selection.csv   # per-feature votes from the four methods
 ├── src/
-│   ├── data.py       # loading, cleaning, Parquet caching, user/card joins
-│   └── features.py   # split definition, feature engineering, encoders
+│   ├── data.py       # loading, cleaning, Parquet caching, checked user/card joins
+│   ├── features.py   # split definition, feature engineering, encoders
+│   └── modeling.py   # sampling, preprocessing, shared model helpers
 ├── environment.yml
 └── requirements.txt
 ```

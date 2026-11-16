@@ -25,3 +25,9 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Small result tables in reports/ are committed
+!reports/*.csv
+
+# CatBoost training logs
+catboost_info/

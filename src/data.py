@@ -131,10 +131,86 @@ def load_cards() -> pd.DataFrame:
     return cards[cols]
 
 
-def join_users_cards(df: pd.DataFrame) -> pd.DataFrame:
-    """Left-join user and card attributes onto transactions, checking row count is unchanged."""
-    out = (df
-           .merge(load_users(), on="User", how="left", validate="many_to_one")
-           .merge(load_cards(), on=["User", "Card"], how="left", validate="many_to_one"))
-    assert len(out) == len(df), "left join changed the row count"
-    return out
+class MergeError(ValueError):
+    """Raised when a join would silently corrupt the transaction table."""
+
+
+def merge_report(df: pd.DataFrame, users: pd.DataFrame, cards: pd.DataFrame) -> pd.DataFrame:
+    """Check the keys *before* joining. Returns one row per check, with a status:
+
+    - FAIL: the join would be wrong (duplicate keys fan out rows; type
+      mismatches silently match nothing; unmatched transactions get NaN attributes).
+    - INFO: worth knowing but harmless (e.g. cards that never transact).
+    """
+    rows = []
+
+    def add(check, value, fail_if_nonzero=True):
+        status = "FAIL" if (fail_if_nonzero and value) else ("INFO" if not fail_if_nonzero else "OK")
+        rows.append({"check": check, "value": value, "status": status})
+
+    # 1. Duplicate keys in the dimension tables would multiply transaction rows
+    add("duplicate User keys in users", int(users["User"].duplicated().sum()))
+    add("duplicate (User, Card) keys in cards", int(cards.duplicated(["User", "Card"]).sum()))
+
+    # 2. Key dtype families must agree, or pandas raises / matches nothing
+    for key in ["User", "Card"]:
+        other = users if key == "User" else cards
+        mismatch = df[key].dtype.kind != other[key].dtype.kind
+        add(f"dtype mismatch on {key} ({df[key].dtype} vs {other[key].dtype})", int(mismatch))
+
+    # 3. Transactions whose keys have no match (left join would fill NaN)
+    tx_users = pd.Index(df["User"].unique())
+    tx_cards = pd.MultiIndex.from_frame(df[["User", "Card"]].drop_duplicates())
+    card_keys = pd.MultiIndex.from_frame(cards[["User", "Card"]])
+    missing_users = tx_users.difference(users["User"])
+    missing_cards = tx_cards.difference(card_keys)
+    add("transaction users missing from users table", len(missing_users))
+    add("transaction cards missing from cards table", len(missing_cards))
+    if len(missing_cards):
+        n_rows = df.set_index(["User", "Card"]).index.isin(missing_cards).sum()
+        add("  -> transactions affected", int(n_rows))
+
+    # 4. Informational: dimension rows with no transactions
+    add("users with no transactions", len(pd.Index(users["User"]).difference(tx_users)), False)
+    add("cards with no transactions", len(card_keys.difference(tx_cards)), False)
+    return pd.DataFrame(rows)
+
+
+def join_users_cards(df: pd.DataFrame, cols: list[str] | None = None, strict: bool = True,
+                     verbose: bool = False) -> pd.DataFrame:
+    """Left-join user and card attributes onto transactions, with error handling.
+
+    Efficiency: only the key columns (or `cols`) of the 24M-row table go into the
+    merge, and the small dimension tables are merged onto it — never the reverse.
+    With strict=True any FAIL in `merge_report` raises MergeError before joining.
+    After joining, it checks the row count and that no attribute became null
+    for a matched row.
+    """
+    users, cards = load_users(), load_cards()
+    report = merge_report(df, users, cards)
+    if verbose:
+        print(report.to_string(index=False))
+    failures = report[report["status"] == "FAIL"]
+    if strict and len(failures):
+        raise MergeError("Join pre-checks failed:\n" + failures.to_string(index=False))
+
+    base = df[["User", "Card"] + [c for c in (cols or []) if c not in ("User", "Card")]]
+    out = (base
+           .merge(users, on="User", how="left", validate="many_to_one")
+           .merge(cards, on=["User", "Card"], how="left", validate="many_to_one", indicator=True))
+
+    if len(out) != len(df):
+        raise MergeError(f"Join changed the row count: {len(df):,} -> {len(out):,}")
+    unmatched = int((out["_merge"] != "both").sum())
+    if strict and unmatched:
+        raise MergeError(f"{unmatched:,} transactions found no card")
+    # Nulls the join introduced (beyond nulls already present in the source tables)
+    for name, table in [("users", users), ("cards", cards)]:
+        for col in table.columns:
+            if col in ("User", "Card") or table[col].isna().any():
+                continue
+            new_nulls = int(out.loc[out["_merge"] == "both", col].isna().sum())
+            if new_nulls:
+                raise MergeError(f"{new_nulls:,} matched rows have null {name}.{col}")
+    out.index = df.index                     # align with the caller's rows
+    return out.drop(columns="_merge")
