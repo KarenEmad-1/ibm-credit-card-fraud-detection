@@ -1,0 +1,5 @@
+,pr_auc,roc_auc,recall@precision0.5,precision@top0.1%,recall@top0.1%,threshold,precision@threshold,recall@threshold,alerts@threshold
+LogReg (baseline),0.1372,0.9826,0.0024,0.241,0.1666,0.9829,0.1938,0.4183,5377.0
+LogReg (tuned),0.1521,0.9825,0.0024,0.2515,0.1738,0.9787,0.2104,0.4287,5076.0
+RandomForest (baseline),0.3476,0.9968,0.0518,0.4483,0.3099,0.6733,0.3807,0.4998,3270.0
+RandomForest (tuned),0.7155,0.999,0.8888,0.7648,0.5287,0.578,0.6653,0.7563,2832.0

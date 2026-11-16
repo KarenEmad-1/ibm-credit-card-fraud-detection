@@ -30,7 +30,7 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 1. ~~EDA~~ ([`01_eda.ipynb`](notebooks/01_eda.ipynb))
 2. ~~Checked table joins, chronological split and feature engineering~~ ([`02_features_split.ipynb`](notebooks/02_features_split.ipynb))
 3. ~~Feature selection with four techniques: correlation + mutual information, L1 logistic regression, CatBoost importance, permutation importance~~ ([`03_feature_selection.ipynb`](notebooks/03_feature_selection.ipynb))
-4. Traditional models: class-weighted logistic regression and Random Forest, then tuning
+4. ~~Traditional models: logistic regression and Random Forest, tuned with Optuna~~ ([`04_traditional_models.ipynb`](notebooks/04_traditional_models.ipynb))
 5. CatBoost, then tuning
 6. FT-Transformer (deep learning for tabular data), then tuning
 7. Ablations: geographic shortcut, user-snapshot leakage, per-segment performance

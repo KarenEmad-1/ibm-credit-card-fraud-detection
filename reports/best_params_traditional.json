@@ -1,0 +1,23 @@
+{
+  "logreg": {
+    "params": {
+      "C": 0.0026239297813109783,
+      "penalty": "l2",
+      "class_weight": "balanced",
+      "neg_per_pos": 50,
+      "start_year": 1991
+    },
+    "val_threshold": 0.9786830820860674
+  },
+  "random_forest": {
+    "params": {
+      "max_depth": 30,
+      "min_samples_leaf": 1,
+      "max_features": 0.5,
+      "class_weight": null,
+      "neg_per_pos": 40,
+      "start_year": 2010
+    },
+    "val_threshold": 0.578
+  }
+}

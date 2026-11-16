@@ -31,3 +31,6 @@ Thumbs.db
 
 # CatBoost training logs
 catboost_info/
+
+# Fitted models (reproducible from the notebooks)
+models/

@@ -74,6 +74,15 @@ def catboost_frame(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
     return X
 
 
+def tree_matrix(df: pd.DataFrame, features: list[str]) -> np.ndarray:
+    """For sklearn tree models: categories -> integer codes (levels already aligned
+    to train in Phase 1), missing -> -1. Trees don't need scaling or one-hot."""
+    X = df[features].copy()
+    for c in categorical_in(features):
+        X[c] = X[c].cat.codes
+    return X.fillna(-1).to_numpy(np.float32)
+
+
 def source_feature(encoded_name: str, features: list[str]) -> str:
     """Map an encoded column ('use_chip_Swipe Transaction', 'missingindicator_x')
     back to the feature it came from."""
