@@ -1,0 +1,27 @@
+# Data (download from Kaggle, see data/README.md)
+data/raw/*
+data/cache/*
+!data/**/.gitkeep
+*.csv
+*.parquet
+
+# Archived drafts and large exports
+_archive/
+
+# Generated reports
+report.html
+*_profile.html
+
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
