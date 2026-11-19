@@ -1,0 +1,3 @@
+,pr_auc,roc_auc,recall@precision0.5,precision@top0.1%,recall@top0.1%,threshold,precision@threshold,recall@threshold,alerts@threshold
+CatBoost (baseline),0.7322,0.9989,0.7824,0.7805,0.5395,0.8585,0.6858,0.6511,2365.0
+CatBoost (tuned),0.8636,0.9989,0.9049,0.9338,0.6455,0.4993,0.8198,0.7836,2381.0

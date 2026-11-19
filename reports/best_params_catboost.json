@@ -1,0 +1,15 @@
+{
+  "catboost": {
+    "params": {
+      "start_year": 2010,
+      "neg_per_pos": 100,
+      "depth": 7,
+      "learning_rate": 0.051962727109326846,
+      "l2_leaf_reg": 2.459125638339734,
+      "auto_class_weights": "None",
+      "random_strength": 3.057952769908918,
+      "iterations": 759
+    },
+    "val_threshold": 0.4992765493592913
+  }
+}
