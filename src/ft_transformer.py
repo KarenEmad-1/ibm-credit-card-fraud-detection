@@ -186,15 +186,34 @@ def _load_checkpoint(path):
         return None
 
 
+def _lr_at(step, total_steps, warmup_steps, base_lr, schedule):
+    """Constant, or linear warm-up then cosine decay to 0."""
+    if schedule is None:
+        return base_lr
+    if step < warmup_steps:
+        return base_lr * (step + 1) / warmup_steps
+    progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+    return base_lr * 0.5 * (1 + math.cos(math.pi * min(progress, 1.0)))
+
+
 def fit_ft(train_tensors, n_num, cardinalities, val_tensors=None, *, epochs=30, patience=4,
            batch_size=1024, lr=1e-4, weight_decay=1e-5, pos_weight=1.0, seed=0, verbose=True,
-           max_minutes=None, on_epoch=None, checkpoint=None, **model_params):
+           max_minutes=None, on_epoch=None, checkpoint=None,
+           schedule=None, warmup_epochs=1, ema_decay=None, select_best=True, **model_params):
     """Train an FT-Transformer.
 
-    With `val_tensors` (x_num, x_cat, y) it early-stops on validation PR-AUC and
-    returns the best epoch's weights; without, it trains exactly `epochs` epochs.
+    With `val_tensors` (x_num, x_cat, y) and `select_best=True` it early-stops on
+    validation PR-AUC and returns the best epoch's weights. Without `val_tensors`,
+    or with `select_best=False`, it trains exactly `epochs` epochs and returns the
+    final weights; validation (if given) is then only recorded, never used.
     `on_epoch(epoch, val_pr_auc)` is called after each validated epoch (used for
     Optuna pruning: it may raise to stop training).
+
+    Stabilisers (both off by default, which reproduces the original runs):
+    - `schedule="cosine"`: linear warm-up over `warmup_epochs`, then cosine decay
+      of the learning rate to 0 at the end of `epochs`.
+    - `ema_decay` (e.g. 0.9995): keep an exponential moving average of the weights,
+      updated every step. Validation and the returned model use the EMA weights.
 
     `checkpoint`: a file path. After every epoch the full training state is saved
     there (model, optimizer, RNG states, early-stopping state, history, elapsed
@@ -216,16 +235,32 @@ def fit_ft(train_tensors, n_num, cardinalities, val_tensors=None, *, epochs=30, 
     pw = torch.tensor(pos_weight, device="cuda")
     gen = torch.Generator(device="cuda").manual_seed(seed)
     history, best_ap, best_state, best_epoch, bad, elapsed = [], -1.0, None, 0, 0, 0.0
+    steps_per_epoch = math.ceil(len(y) / batch_size)
+    total_steps, warmup_steps = epochs * steps_per_epoch, warmup_epochs * steps_per_epoch
+    ema = None
+    if ema_decay is not None:
+        ema = FTTransformer(n_num, cardinalities, **model_params).cuda()
+        ema.load_state_dict(model.state_dict())
+        ema.requires_grad_(False)
+    eval_model = ema if ema is not None else model
+    early_stop = val_tensors is not None and select_best
 
     def finish():
-        if best_state is not None:
+        if early_stop and best_state is not None:
             model.load_state_dict(best_state)
             model.best_epoch = best_epoch
+        elif ema is not None:
+            model.load_state_dict(ema.state_dict())
+            model.best_epoch = len(history)
+        else:
+            model.best_epoch = len(history)
         return model, history
 
     ck = _load_checkpoint(checkpoint)
     if ck is not None:
         model.load_state_dict(ck["model"])
+        if ema is not None and ck.get("ema") is not None:
+            ema.load_state_dict(ck["ema"])
         opt.load_state_dict(ck["optimizer"])
         gen.set_state(ck["generator"].cpu())
         torch.cuda.set_rng_state(ck["cuda_rng"].cpu())
@@ -247,39 +282,53 @@ def fit_ft(train_tensors, n_num, cardinalities, val_tensors=None, *, epochs=30, 
         if checkpoint is not None:
             _save_checkpoint(checkpoint, {
                 "model": model.state_dict(), "optimizer": opt.state_dict(),
+                "ema": ema.state_dict() if ema is not None else None,
                 "generator": gen.get_state(), "cuda_rng": torch.cuda.get_rng_state(),
                 "history": history, "best_ap": best_ap, "best_epoch": best_epoch, "bad": bad,
                 "best_state": best_state, "elapsed": elapsed, "finished": finished})
 
+    params = list(model.parameters())
+    ema_params = list(ema.parameters()) if ema is not None else None
     stop = False
     for epoch in range(len(history) + 1, epochs + 1):
         model.train()
         t0 = time.time()
+        step = (epoch - 1) * steps_per_epoch
         perm = torch.randperm(len(y), device="cuda", generator=gen)
         total = torch.zeros((), device="cuda")
         for i in range(0, len(y), batch_size):
             idx = perm[i:i + batch_size]
+            if schedule is not None:
+                cur_lr = _lr_at(step, total_steps, warmup_steps, lr, schedule)
+                for g in opt.param_groups:
+                    g["lr"] = cur_lr
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 logits = model(x_num[idx], x_cat[idx])
             loss = Fn.binary_cross_entropy_with_logits(logits.float(), y[idx], pos_weight=pw)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
+            if ema is not None:                     # usual EMA warm-up: short memory in the first steps
+                d = min(ema_decay, (1 + step) / (10 + step))
+                with torch.no_grad():
+                    torch._foreach_lerp_(ema_params, params, 1 - d)
+            step += 1
             total += loss.detach() * len(idx)       # no .item(): avoids a GPU sync every step
         rec = {"epoch": epoch, "train_loss": total.item() / len(y), "secs": time.time() - t0}
         if val_tensors is not None:
-            p = predict(model, val_tensors[0], val_tensors[1])
+            p = predict(eval_model, val_tensors[0], val_tensors[1])
             rec["val_pr_auc"] = average_precision_score(val_tensors[2].cpu().numpy(), p)
             if rec["val_pr_auc"] > best_ap:
                 best_ap, best_epoch, bad = rec["val_pr_auc"], epoch, 0
-                best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+                if early_stop:
+                    best_state = {k: v.detach().clone() for k, v in eval_model.state_dict().items()}
             else:
                 bad += 1
         history.append(rec)
         elapsed += time.time() - t0
         if verbose:
             print("  " + " | ".join(f"{k} {v:.4f}" if isinstance(v, float) else f"{k} {v}" for k, v in rec.items()))
-        stop = ((val_tensors is not None and bad >= patience)
+        stop = ((early_stop and bad >= patience)
                 or (max_minutes is not None and elapsed / 60 > max_minutes))
         save(finished=stop or epoch == epochs)
         if on_epoch is not None and "val_pr_auc" in rec:
