@@ -1,0 +1,5 @@
+,pr_auc,roc_auc,recall@precision0.5,precision@top0.1%,recall@top0.1%,threshold,precision@threshold,recall@threshold,alerts@threshold
+LogReg B,0.0196,0.8399,0.0,0.0407,0.0281,0.9639,0.038,0.0939,6156.0
+RandomForest B,0.4827,0.9979,0.5608,0.5767,0.3986,0.51,0.4995,0.5648,2817.0
+CatBoost B,0.4802,0.9862,0.4789,0.5941,0.4107,0.3251,0.5354,0.4613,2146.0
+FT-Transformer B,0.4237,0.9794,0.4018,0.5447,0.3766,0.5454,0.5395,0.3838,1772.0
