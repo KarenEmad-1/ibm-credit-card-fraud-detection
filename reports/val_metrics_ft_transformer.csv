@@ -1,0 +1,3 @@
+,pr_auc,roc_auc,recall@precision0.5,precision@top0.1%,recall@top0.1%,threshold,precision@threshold,recall@threshold,alerts@threshold
+FT-Transformer (baseline),0.7552,0.9989,0.8507,0.8031,0.5552,0.7476,0.6586,0.7495,2835.0
+FT-Transformer (tuned),0.7552,0.9989,0.8507,0.8031,0.5552,0.7476,0.6586,0.7495,2835.0

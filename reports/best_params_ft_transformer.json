@@ -1,0 +1,18 @@
+{
+  "ft_transformer": {
+    "params": {
+      "neg_per_pos": 100,
+      "d_token": 192,
+      "n_blocks": 3,
+      "attn_dropout": 0.2,
+      "ffn_dropout": 0.1,
+      "residual_dropout": 0.0,
+      "lr": 0.0001,
+      "weight_decay": 1e-05,
+      "batch_size": 1024,
+      "epochs": 10
+    },
+    "start_year": 2010,
+    "val_threshold": 0.7476159334182739
+  }
+}
