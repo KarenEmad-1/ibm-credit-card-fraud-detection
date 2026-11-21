@@ -4,7 +4,7 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 
 > **Status:** complete. All four models were scored once on the 2019 test year (see [Results](#results-2019-test-year)).
 
-## Key findings so far
+## Key findings
 
 | Finding | What it means for modeling |
 |---|---|
@@ -51,6 +51,7 @@ The test year (1.72M transactions, 2,087 frauds) was scored **once**, after ever
 
 - **Validation scores held on test.** Every B model is within 0.02 of its validation score, so model selection did not overfit validation.
 - **CatBoost and Random Forest are statistically tied** on B: CatBoost leads by 0.018, with a paired bootstrap CI of −0.012 to +0.044. Both beat FT-Transformer significantly. Gradient-boosted and bagged trees beat the deep tabular model here.
+- **Logistic regression B (0.011) is weak but not broken.** The fraud base rate is 0.0012, so a random ranking scores about 0.001 and LR B is roughly 9× chance. With geography removed, the remaining signal lives in interactions (channel × new merchant × amount vs the card's history), which a linear model can't represent without hand-built cross terms. That is why the tree models gain so much over it.
 - **The geographic shortcut is worth 0.39 PR-AUC** (CatBoost A − B, CI 0.378–0.410), which confirms the ablation finding on unseen data.
 
 **Limitations**
@@ -65,8 +66,8 @@ Figures: [`test_pr_curves.png`](reports/figures/test_pr_curves.png), [`shap_shar
 A fraud operations console in the style of a trading terminal. FastAPI serves the data, and the frontend is Preact + htm + D3 loaded as ES modules, so there is no build step. It serves only scores the notebooks already saved and never re-scores a split, so the 2019 test year stays sealed until notebook 08 has scored it once.
 
 ```bash
-python scripts/build_dashboard_data.py --split val    # validation 2018, available now
-python scripts/build_dashboard_data.py --split test   # 2019, built from notebook 08's saved scores
+python scripts/build_dashboard_data.py --split val    # validation year 2018
+python scripts/build_dashboard_data.py --split test   # test year 2019, from notebook 08's saved scores
 uvicorn api.main:app --port 8000                      # open http://localhost:8000
 ```
 
@@ -85,21 +86,40 @@ uvicorn api.main:app --port 8000                      # open http://localhost:80
 
 ```
 ├── data/
-│   ├── raw/          # Kaggle CSVs (not committed, see data/README.md)
-│   └── cache/        # generated Parquet files (not committed)
+│   ├── raw/                  # Kaggle CSVs (not committed, see data/README.md)
+│   └── cache/                # generated Parquet files and saved scores (not committed)
 ├── notebooks/
 │   ├── 01_eda.ipynb
 │   ├── 02_features_split.ipynb
-│   └── 03_feature_selection.ipynb
-├── reports/
-│   ├── figures/
-│   └── feature_selection.csv   # per-feature votes from the four methods
+│   ├── 03_feature_selection.ipynb
+│   ├── 04_traditional_models.ipynb   # logistic regression, Random Forest
+│   ├── 05_catboost.ipynb
+│   ├── 06_ft_transformer.ipynb
+│   ├── 07_ablations.ipynb            # geography, user snapshots, segments
+│   └── 08_final_evaluation.ipynb     # single test-year scoring, bootstrap CIs, SHAP
 ├── src/
-│   ├── data.py       # loading, cleaning, Parquet caching, checked user/card joins
-│   ├── features.py   # split definition, feature engineering, encoders
-│   └── modeling.py   # sampling, preprocessing, shared model helpers
+│   ├── data.py               # loading, cleaning, Parquet caching, checked user/card joins
+│   ├── features.py           # split definition, leakage-safe feature engineering, encoders
+│   ├── modeling.py           # sampling, preprocessing, shared model helpers
+│   ├── evaluation.py         # one metric protocol for every model (PR-AUC, recall@precision)
+│   ├── ft_transformer.py     # FT-Transformer written directly in PyTorch
+│   └── final_models.py       # frozen training recipes reused by notebooks 07-08
+├── reports/
+│   ├── figures/              # PR curves, SHAP plots, EDA figures
+│   ├── best_params_*.json    # tuned hyperparameters
+│   ├── optuna_trials_*.csv   # full tuning histories
+│   ├── val_metrics_*.csv     # validation results per model and ablation
+│   └── test_*.csv            # test-year metrics, bootstrap CIs, paired differences
+├── api/
+│   ├── main.py               # FastAPI app, serves the dashboard
+│   ├── store.py              # in-memory saved scores, loaded once at startup
+│   └── routers/              # performance, replay (SSE), play (game/triage), transactions
+├── dashboard/                # Preact + htm + D3 frontend, no build step
+├── scripts/
+│   └── build_dashboard_data.py   # gathers saved scores into the dashboard's data
 ├── environment.yml
-└── requirements.txt
+├── requirements.txt
+└── LICENSE
 ```
 
 ## Setup

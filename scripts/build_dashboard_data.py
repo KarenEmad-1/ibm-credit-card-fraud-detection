@@ -1,7 +1,7 @@
 """Build the data the dashboard serves, from scores the notebooks already saved.
 
-    python scripts/build_dashboard_data.py --split val    # 2018, available now
-    python scripts/build_dashboard_data.py --split test   # 2019, only after notebook 08
+    python scripts/build_dashboard_data.py --split val    # validation year 2018
+    python scripts/build_dashboard_data.py --split test   # test year 2019, from notebook 08's saved scores
 
 Nothing here trains, tunes or re-scores a model. The script only gathers saved
 scores, joins them to the transaction details the dashboard displays, and
