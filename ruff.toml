@@ -1,0 +1,10 @@
+# Lint for correctness, not style: syntax errors (E9), pyflakes (F: undefined names,
+# unused imports/variables) and bugbear (B: likely bugs). Style rules are left out on
+# purpose: enforcing them would mean reformatting the model code in src/, which is
+# frozen with the reported results.
+target-version = "py312"
+line-length = 120
+extend-exclude = ["notebooks", "data", "models", "dist", "dashboard/node_modules"]
+
+[lint]
+select = ["E9", "F", "B"]
