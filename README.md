@@ -63,6 +63,8 @@ Figures: [`test_pr_curves.png`](reports/figures/test_pr_curves.png), [`shap_shar
 
 ## Dashboard: FRAUD-OPS
 
+![FRAUD-OPS SHORTCUT screen: CatBoost test PR-AUC 0.873 with geography, and every model's drop without it](reports/figures/dashboard_shortcut.png)
+
 A fraud operations console in the style of a trading terminal. FastAPI serves the data, and the frontend is Preact + htm + D3 loaded as ES modules, so there is no build step. It serves only scores the notebooks already saved and never re-scores a split, so the 2019 test year stays sealed until notebook 08 has scored it once.
 
 ```bash

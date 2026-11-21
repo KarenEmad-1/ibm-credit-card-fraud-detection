@@ -52,7 +52,7 @@ export function Shortcut() {
         <div class="facts">
           <div class="fact"><div class="n">${intl ? fmtPct(intl.share_of_all_fraud, 0) : "—"}</div><div class="t">of all fraud is international in-store</div></div>
           <div class="fact"><div class="n">${intl ? fmtPct(intl.fraud_rate, 1) : "—"}</div><div class="t">fraud rate at foreign merchants</div></div>
-          <div class="fact"><div class="n">${intl && dom ? (dom.fraud_rate > 0 ? `${fmtInt(intl.fraud_rate / dom.fraud_rate)}×` : "∞") : "—"}</div><div class="t">${dom && dom.fraud_rate === 0 ? "domestic stores had no fraud at all" : "riskier than a domestic store"}</div></div>
+          <div class="fact"><div class="n">${intl && dom ? (dom.fraud_rate > 0 ? `${fmtInt(intl.fraud_rate / dom.fraud_rate)}×` : "0") : "—"}</div><div class="t">${dom && dom.fraud_rate === 0 ? "frauds at domestic stores" : "riskier than a domestic store"}</div></div>
         </div>
       </${Pane}>
     </div>
@@ -98,7 +98,7 @@ function RateBars({ rows }) {
     const x = d3.scaleLog().domain([1e-5, 1]).range([m.l, w - m.r]);
     const y = d3.scaleBand().domain(data.map((d) => d.level)).range([m.t, h - m.b]).padding(0.35);
     svg.append("g").attr("class", "grid").attr("transform", `translate(0,${h - m.b})`).call(d3.axisBottom(x).tickValues([1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]).tickSize(-(h - m.t - m.b)).tickFormat(""));
-    svg.append("g").attr("class", "axis").attr("transform", `translate(0,${h - m.b})`).call(d3.axisBottom(x).tickValues([1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]).tickFormat((v) => fmtPct(v, v < 1e-3 ? 3 : 0)).tickSize(0)).select(".domain").remove();
+    svg.append("g").attr("class", "axis").attr("transform", `translate(0,${h - m.b})`).call(d3.axisBottom(x).tickValues([1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]).tickFormat((v) => fmtPct(v, Math.max(0, Math.round(-Math.log10(v)) - 2))).tickSize(0)).select(".domain").remove();
     svg.selectAll(".lb").data(data).join("text").attr("x", m.l - 8).attr("y", (d) => y(d.level) + y.bandwidth() / 2 + 4).attr("text-anchor", "end")
       .style("fill", cssVar("--text-2")).style("font-size", "12px").text((d) => d.level.toUpperCase());
     svg.selectAll(".b").data(data).join("rect").attr("x", m.l).attr("y", (d) => y(d.level)).attr("height", y.bandwidth())
@@ -107,7 +107,7 @@ function RateBars({ rows }) {
       .on("mousemove", (ev, d) => tip.show(ev, `<b>${d.level}</b><br>${fmtInt(d.transactions)} txns · ${fmtInt(d.frauds)} frauds<br>fraud rate ${fmtPct(d.fraud_rate, 3)}<br>${fmtPct(d.share_of_all_fraud, 1)} of all fraud`))
       .on("mouseleave", () => tip.hide());
     svg.selectAll(".v").data(data).join("text").attr("x", (d) => x(Math.max(d.fraud_rate, 1e-5)) + 6).attr("y", (d) => y(d.level) + y.bandwidth() / 2 + 4)
-      .style("fill", cssVar("--text")).style("font-size", "12px").text((d) => fmtPct(d.fraud_rate, d.fraud_rate < 1e-3 ? 4 : 2));
+      .style("fill", cssVar("--text")).style("font-size", "12px").text((d) => (d.fraud_rate === 0 ? "0%" : fmtPct(d.fraud_rate, d.fraud_rate < 1e-3 ? 4 : 2)));
   }, [rows]);
   return html`<div class="chart-box" style="height:170px" ref=${ref}></div>`;
 }
