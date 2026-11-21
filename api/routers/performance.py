@@ -6,8 +6,8 @@ import re
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
+from api.config import settings
 from api.store import REPORTS_DIR, store
-from src.data import PROJECT_ROOT
 
 router = APIRouter(prefix="/api", tags=["performance"])
 
@@ -83,7 +83,7 @@ def ablations():
 
     # progress log, so the page shows results while notebook 07 is still running
     log_rows = []
-    log = PROJECT_ROOT / "models" / "ablation_run.log"
+    log = settings.ablation_log
     if log.exists():
         for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
             m = re.search(r"(\S.*?) ([A-D]): val PR-AUC ([0-9.]+)", line[20:])

@@ -34,3 +34,6 @@ catboost_info/
 
 # Fitted models (reproducible from the notebooks)
 models/
+
+# Packaged demo bundle (published as a GitHub Release asset)
+dist/

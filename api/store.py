@@ -1,26 +1,32 @@
 """In-memory data for the dashboard, loaded once at startup.
 
-Everything comes from `data/cache/dashboard/<split>/`, built by
-`scripts/build_dashboard_data.py`. The API never re-scores a whole split: metrics at
+Everything comes from `<FRAUD_DASHBOARD_DIR>/<split>/` (default
+`data/cache/dashboard/<split>/`), built by `scripts/build_dashboard_data.py`.
+Paths are set in `api/config.py`. The API never re-scores a whole split: metrics at
 any threshold come from sorted saved scores, so each request is O(log n).
 """
 from __future__ import annotations
 
 import json
+import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from functools import cached_property
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 from sklearn.metrics import average_precision_score
 
-from src.data import CACHE_DIR, PROJECT_ROOT
+from api.config import settings
 
-DASHBOARD_DIR = CACHE_DIR / "dashboard"
-REPORTS_DIR = PROJECT_ROOT / "reports"
-SPLIT_ORDER = ["test", "val"]                     # test is the headline once notebook 08 has run
+log = logging.getLogger("fraud_ops.store")
+
+DASHBOARD_DIR = settings.dashboard_dir
+REPORTS_DIR = settings.reports_dir
+TEXT_COLUMNS = ["merchant", "city", "state", "channel", "errors"]
+SPLIT_ORDER = list(settings.splits)               # test is the headline once notebook 08 has run
 
 
 @dataclass
@@ -53,7 +59,13 @@ class SplitData:
         d = DASHBOARD_DIR / split
         self.split = split
         self.meta = json.loads((d / "meta.json").read_text())
-        self.tx = pd.read_parquet(d / "transactions.parquet")
+        # Repeated text values are read straight into category codes (Arrow dictionary
+        # encoding), so the 1.7M-row Python strings are never created: same values, a
+        # fraction of the memory. Those strings were ~80% of the frame, and Python keeps
+        # the memory of freed small objects, so converting after loading wouldn't help.
+        path = d / "transactions.parquet"
+        text_cols = [c for c in TEXT_COLUMNS if c in pq.read_schema(path).names]
+        self.tx = pq.read_table(path, read_dictionary=text_cols).to_pandas()
         self.model_keys = [m["key"] for m in self.meta["models"]]
         self.models_meta = {m["key"]: m for m in self.meta["models"]}
         self.y = self.tx["is_fraud"].to_numpy().astype(np.int64)
@@ -97,7 +109,8 @@ class SplitData:
 
     @cached_property
     def segment_labels(self) -> dict[str, np.ndarray]:
-        return {name: np.asarray(fn(self.tx)) for name, fn in self.SEGMENTS.items()}
+        # Kept as categoricals: six cached text arrays of 1.7M labels cost ~580 MiB
+        return {name: pd.Categorical(np.asarray(fn(self.tx))) for name, fn in self.SEGMENTS.items()}
 
     def segments(self, key: str, t: float) -> list[dict]:
         s = self.models[key].scores
@@ -125,9 +138,14 @@ class SplitData:
     def features(self) -> pd.DataFrame:
         with self._lock:
             if self._features is None:
-                from src.modeling import load_split
+                from src.modeling import categorical_in
                 cols = sorted({c for e in self._explainer_specs().values() for c in e["features"]})
-                self._features = load_split(self.split, cols)
+                # Same as src.modeling.load_split, but from the configured directory
+                df = pd.read_parquet(settings.features_dir / f"features_{self.split}.parquet", columns=cols)
+                for c in categorical_in(list(df.columns)):
+                    if not isinstance(df[c].dtype, pd.CategoricalDtype):
+                        df[c] = df[c].astype(str).astype("category")
+                self._features = df
             return self._features
 
     def _explainer_specs(self) -> dict:
@@ -142,13 +160,13 @@ class SplitData:
             if fam != "CatBoost":
                 continue
             if variant == "A":
-                path = PROJECT_ROOT / "models" / "catboost_tuned.cbm"
+                path = settings.models_dir / "catboost_tuned.cbm"
                 if path.exists():
                     m = CatBoostClassifier()
                     m.load_model(str(path))
                     specs[key] = {"model": m, "features": list(m.feature_names_)}
             else:
-                path = PROJECT_ROOT / "models" / "final" / f"catboost_{variant}.joblib"
+                path = settings.models_dir / "final" / f"catboost_{variant}.joblib"
                 if path.exists():
                     b = joblib.load(path)
                     specs[key] = {"model": b["model"], "features": list(b["features"])}
@@ -191,9 +209,16 @@ class Store:
     def load(self) -> None:
         for s in SPLIT_ORDER:
             if (DASHBOARD_DIR / s / "meta.json").exists():
+                t0 = time.perf_counter()
                 self.splits[s] = SplitData(s)
+                log.info("loaded split %s: %d transactions in %.1fs", s, len(self.splits[s].tx),
+                         time.perf_counter() - t0)
+        # Arrow's allocator keeps freed read buffers for reuse; hand them back to the OS
+        import pyarrow as pa
+        pa.default_memory_pool().release_unused()
         if not self.splits:
-            raise RuntimeError("No dashboard data found. Run: python scripts/build_dashboard_data.py --split val")
+            raise RuntimeError(f"No dashboard data found in {DASHBOARD_DIR}. "
+                               "Run: python scripts/build_dashboard_data.py --split val")
 
     @property
     def default_split(self) -> str:
