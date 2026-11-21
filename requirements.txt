@@ -14,5 +14,7 @@ shap==0.54.1
 fastapi==0.165.0
 uvicorn==0.54.0
 ydata-profiling==4.18.4
+# Tests
+pytest==9.2.0
 jupyterlab
 ipykernel

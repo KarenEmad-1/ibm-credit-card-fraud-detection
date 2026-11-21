@@ -22,7 +22,7 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 
 - **Chronological split:** train 1991–2017 · validation 2018 (2,491 frauds) · test 2019 (2,087 frauds). A random split would let the model learn from the future.
 - **Per-card history features** use only *past* transactions: activity in the last 1h/24h, recent errors, time since the last transaction, new-merchant flag, and amount vs the card's own history.
-- **Leakage is tested, not assumed:** the history features are identical whether or not future data is present (truncation test), windowed counts match a brute-force recount, and encoders are fitted on the training period only.
+- **Leakage is tested, not assumed:** the history features are identical whether or not future data is present (truncation test), windowed counts match a brute-force recount, and encoders are fitted on the training period only. These checks run as tests: `pytest tests/`.
 - **No label-derived features.** In production, fraud labels arrive weeks late.
 
 ## Roadmap
@@ -119,6 +119,8 @@ uvicorn api.main:app --port 8000                      # open http://localhost:80
 ├── dashboard/                # Preact + htm + D3 frontend, no build step
 ├── scripts/
 │   └── build_dashboard_data.py   # gathers saved scores into the dashboard's data
+├── tests/
+│   └── test_leakage.py       # truncation, brute-force recount and encoder leakage tests
 ├── environment.yml
 ├── requirements.txt
 └── LICENSE
@@ -131,6 +133,8 @@ conda env create -f environment.yml
 conda activate fraud-detection
 python -m ipykernel install --user --name fraud-detection
 ```
+
+Run the leakage tests with `pytest tests/`. They use synthetic data and take a few seconds, plus one check on the real data that runs once the cache exists.
 
 Download the data as described in [`data/README.md`](data/README.md), then run the notebooks in order. The first load parses the 2.3 GB CSV (about 2 minutes) and caches it as Parquet. Later loads take seconds.
 
