@@ -19,9 +19,13 @@ export function Shortcut() {
   }, []);
   useEffect(() => { setStatus(`GEOGRAPHY ${geo ? "ON" : "OFF"} · press G`); }, [geo]);
 
-  const pr = (fam, v) => abl?.log.find((r) => r.model === fam && r.variant === v)?.pr_auc
-    ?? meta.models.find((m) => m.key === `${fam} ${v}`)?.metrics.pr_auc;
-  const a = pr("CatBoost", "A"), b = pr("CatBoost", "B"), c = pr("CatBoost", "C");
+  // On the test split the saved test metrics win; the ablation log is validation-only (variant C was never scored on test).
+  const isTest = split === "test";
+  const splitLabel = isTest ? "TEST 2019" : "VALIDATION";
+  const valPr = (fam, v) => abl?.log.find((r) => r.model === fam && r.variant === v)?.pr_auc;
+  const metaPr = (fam, v) => meta.models.find((m) => m.key === `${fam} ${v}`)?.metrics.pr_auc;
+  const pr = (fam, v) => (isTest ? metaPr(fam, v) ?? valPr(fam, v) : valPr(fam, v) ?? metaPr(fam, v));
+  const a = pr("CatBoost", "A"), b = pr("CatBoost", "B"), c = valPr("CatBoost", "C");
   const intl = seg?.find((x) => x.level === "International"), dom = seg?.find((x) => x.level === "Domestic in-store");
   const fams = ["LogReg", "RandomForest", "CatBoost", "FT-Transformer"];
 
@@ -32,29 +36,29 @@ export function Shortcut() {
         <div class="prose"><p>The best model scores well. Then we hide one thing from it: <b>where the merchant is</b> (is_international and zip_freq, which is 0 for every foreign merchant).</p></div>
         <div style="display:flex;gap:28px;align-items:end;flex-wrap:wrap;margin:14px 0 6px">
           <div>
-            <div class="muted" style="font-size:11px;letter-spacing:.14em">CATBOOST · VALIDATION PR-AUC</div>
+            <div class="muted" style="font-size:11px;letter-spacing:.14em">CATBOOST · ${splitLabel} PR-AUC</div>
             <div class=${`giant ${geo ? "" : "down"}`}><${Tween} value=${geo ? a : b} format=${(x) => (x == null ? "—" : x.toFixed(3))} ms=${1100} /></div>
           </div>
           <button class=${`toggle ${geo ? "on" : ""}`} onClick=${() => setGeo((g) => !g)} aria-pressed=${geo}>
             <kbd>G</kbd>GEOGRAPHY <span class="sw"></span> ${geo ? "ON" : "OFF"}</button>
         </div>
         <div class="prose"><p>${geo
-          ? html`With geography the model looks excellent. Give it the raw merchant state as well and it climbs to <b>${c ? c.toFixed(3) : "—"}</b>.`
+          ? html`With geography the model looks excellent. Give it the raw merchant state as well and it climbs to <b>${c ? c.toFixed(3) : "—"}</b>${isTest ? " on validation (variant C was never scored on test)" : ""}.`
           : html`Without geography, <b>${a && b ? fmtPct(1 - b / a, 0) : "—"}</b> of the score is gone. That's how much of the "skill" was spotting a foreign merchant.`}</p></div>
       </${Pane}>
 
-      <${Pane} title="FRAUD RATE BY MERCHANT LOCATION" right="log scale · 2018">
+      <${Pane} title="FRAUD RATE BY MERCHANT LOCATION" right=${`log scale · ${isTest ? 2019 : 2018}`}>
         ${seg ? html`<${RateBars} rows=${seg} />` : html`<div class="chart-box muted blink">loading…</div>`}
         <div class="facts">
           <div class="fact"><div class="n">${intl ? fmtPct(intl.share_of_all_fraud, 0) : "—"}</div><div class="t">of all fraud is international in-store</div></div>
           <div class="fact"><div class="n">${intl ? fmtPct(intl.fraud_rate, 1) : "—"}</div><div class="t">fraud rate at foreign merchants</div></div>
-          <div class="fact"><div class="n">${intl && dom ? `${fmtInt(intl.fraud_rate / dom.fraud_rate)}×` : "—"}</div><div class="t">riskier than a domestic store</div></div>
+          <div class="fact"><div class="n">${intl && dom ? (dom.fraud_rate > 0 ? `${fmtInt(intl.fraud_rate / dom.fraud_rate)}×` : "∞") : "—"}</div><div class="t">${dom && dom.fraud_rate === 0 ? "domestic stores had no fraud at all" : "riskier than a domestic store"}</div></div>
         </div>
       </${Pane}>
     </div>
 
     <div class="grid g-2">
-      <${Pane} title="EVERY MODEL DROPS" right="validation PR-AUC · variant A (with geography) → B (without)">
+      <${Pane} title="EVERY MODEL DROPS" right=${`${isTest ? "test 2019" : "validation"} PR-AUC · variant A (with geography) → B (without)`}>
         <table class="tbl"><thead><tr><th>MODEL</th><th class="num">WITH</th><th></th><th class="num">WITHOUT</th><th class="num">LOST</th></tr></thead>
           <tbody>${fams.map((f) => {
             const va = pr(f, "A"), vb = pr(f, "B");
@@ -64,7 +68,7 @@ export function Shortcut() {
               <td class="num ${vb != null ? "bad" : "muted"}">${vb != null ? vb.toFixed(3) : "running…"}</td>
               <td class="num">${va != null && vb != null ? fmtPct(1 - vb / va, 0) : "—"}</td></tr>`;
           })}</tbody></table>
-        ${abl && !abl.complete ? html`<div class="muted" style="font-size:11px;margin-top:6px">notebook 07 still running: rows fill in as it logs results</div>` : null}
+        ${!isTest && abl && !abl.complete ? html`<div class="muted" style="font-size:11px;margin-top:6px">notebook 07 still running: rows fill in as it logs results</div>` : null}
       </${Pane}>
       <${Pane} title="WHAT IT MEANS">
         <div class="prose">

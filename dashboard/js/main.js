@@ -16,7 +16,7 @@ const SCREENS = [
   { id: "triage", key: "4", label: "TRIAGE", title: "Alert triage", Comp: Triage,
     brief: "One shift, a limited number of investigations. Pick which alerts to work, then compare your dollars recovered with the model's ranking." },
   { id: "shortcut", key: "5", label: "SHORTCUT", title: "The shortcut", Comp: Shortcut,
-    brief: "The best model scores 0.86. Hide merchant geography and see what's left. This is the project's main finding." },
+    brief: "The best model scores 0.87 on the 2019 test year. Hide merchant geography and see what's left. This is the project's main finding." },
   { id: "lab", key: "6", label: "LAB", title: "Model lab", Comp: Lab,
     brief: "The evidence behind the screens: PR curves, a threshold simulator and per-segment performance for all four models." },
 ];

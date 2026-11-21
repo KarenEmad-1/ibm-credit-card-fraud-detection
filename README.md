@@ -76,7 +76,7 @@ uvicorn api.main:app --port 8000                      # open http://localhost:80
 | 2 | HUNT | Beat the model: judge 10 transactions as fraud or legit, with the card's recent history, then see all four models' verdicts and the SHAP reasons |
 | 3 | CASES | Card attack files: a timeline of one stolen card with risk score, time to detection and dollars lost before the first catch, plus SHAP for any point |
 | 4 | TRIAGE | One shift with a limited investigation budget: pick alerts, then compare your dollars recovered with ranking by score, by score × amount, and with hindsight |
-| 5 | SHORTCUT | Switches geography off and shows PR-AUC fall from 0.864 to 0.480: the project's main finding |
+| 5 | SHORTCUT | Switches geography off and shows test PR-AUC fall from 0.873 to 0.481 (validation: 0.864 to 0.480): the project's main finding |
 | 6 | LAB | PR curves, model board, threshold simulator and per-segment metrics |
 
 `M` cycles the model, `T` switches between amber and green phosphor, and `?` opens help. API docs are at `/docs`.
