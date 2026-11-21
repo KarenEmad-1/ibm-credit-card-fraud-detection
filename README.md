@@ -60,6 +60,27 @@ The test year (1.72M transactions, 2,087 frauds) was scored **once**, after ever
 
 Figures: [`test_pr_curves.png`](reports/figures/test_pr_curves.png), [`shap_share_heatmap.png`](reports/figures/shap_share_heatmap.png), [`shap_beeswarms.png`](reports/figures/shap_beeswarms.png). Tables: `reports/test_*.csv`, `reports/shap_importance_share.csv`.
 
+## Dashboard: FRAUD-OPS
+
+A fraud operations console in the style of a trading terminal. FastAPI serves the data, and the frontend is Preact + htm + D3 loaded as ES modules, so there is no build step. It serves only scores the notebooks already saved and never re-scores a split, so the 2019 test year stays sealed until notebook 08 has scored it once.
+
+```bash
+python scripts/build_dashboard_data.py --split val    # validation 2018, available now
+python scripts/build_dashboard_data.py --split test   # 2019, built from notebook 08's saved scores
+uvicorn api.main:app --port 8000                      # open http://localhost:8000
+```
+
+| Key | Screen | What it does |
+|---|---|---|
+| 1 | TAPE | Replays the year live (server-sent events): a transaction tape, an alert queue whose labels arrive after a delay, alerts per hour, and feature drift (PSI vs training) |
+| 2 | HUNT | Beat the model: judge 10 transactions as fraud or legit, with the card's recent history, then see all four models' verdicts and the SHAP reasons |
+| 3 | CASES | Card attack files: a timeline of one stolen card with risk score, time to detection and dollars lost before the first catch, plus SHAP for any point |
+| 4 | TRIAGE | One shift with a limited investigation budget: pick alerts, then compare your dollars recovered with ranking by score, by score × amount, and with hindsight |
+| 5 | SHORTCUT | Switches geography off and shows PR-AUC fall from 0.864 to 0.480: the project's main finding |
+| 6 | LAB | PR curves, model board, threshold simulator and per-segment metrics |
+
+`M` cycles the model, `T` switches between amber and green phosphor, and `?` opens help. API docs are at `/docs`.
+
 ## Project structure
 
 ```

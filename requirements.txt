@@ -9,6 +9,10 @@ catboost==1.2.10
 optuna==5.1.0
 # FT-Transformer (CUDA 12.8 build): pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
 torch==2.11.0
+shap==0.54.1
+# Dashboard backend
+fastapi==0.165.0
+uvicorn==0.54.0
 ydata-profiling==4.18.4
 jupyterlab
 ipykernel
