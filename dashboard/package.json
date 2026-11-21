@@ -1,0 +1,16 @@
+{
+  "name": "fraud-ops-dashboard",
+  "private": true,
+  "description": "Build-time only: makes local copies of the CDN dependencies for the Docker image. The dashboard itself runs without a build step.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs dist"
+  },
+  "devDependencies": {
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/vt323": "5.3.0",
+    "d3": "7.9.0",
+    "esbuild": "0.28.2",
+    "htm": "3.1.1"
+  }
+}

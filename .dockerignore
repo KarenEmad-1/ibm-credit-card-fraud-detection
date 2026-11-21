@@ -1,0 +1,15 @@
+# Allow-list: the build context holds only what the Dockerfile copies.
+# (data/, models/, notebooks, dist/ and the conda env never reach the daemon)
+*
+!Dockerfile
+!requirements-serve.lock
+!requirements-dev.lock
+!api/
+!src/
+!tests/
+!reports/*.csv
+!dashboard/
+dashboard/node_modules/
+dashboard/dist/
+**/__pycache__/
+**/*.pyc

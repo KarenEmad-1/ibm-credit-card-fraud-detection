@@ -1,10 +1,12 @@
 // Shared imports, API client, formatters and small UI pieces for FRAUD-OPS.
 // No build step: Preact (via htm's standalone bundle) and D3 load as ES modules.
+// "htm/preact/standalone" and "d3" are resolved by the import map in index.html: CDN
+// URLs when served from the repo, local copies in the Docker image (see build.mjs).
 export {
   html, render, useState, useEffect, useRef, useMemo, useCallback, useContext, createContext,
-} from "https://unpkg.com/htm@3.1.1/preact/standalone.module.js";
-import { html, useEffect, useRef, createContext, useContext } from "https://unpkg.com/htm@3.1.1/preact/standalone.module.js";
-export * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
+} from "htm/preact/standalone";
+import { html, useEffect, useRef, createContext, useContext } from "htm/preact/standalone";
+export * as d3 from "d3";
 
 // ------------------------------------------------------------------ app context
 export const Ctx = createContext(null);

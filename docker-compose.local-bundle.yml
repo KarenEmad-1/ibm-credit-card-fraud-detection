@@ -1,0 +1,10 @@
+# Build from a locally packaged bundle (dist/) instead of the GitHub Release:
+#   python scripts/package_demo_assets.py
+#   docker compose -f docker-compose.yml -f docker-compose.local-bundle.yml up --build
+services:
+  app:
+    build:
+      args:
+        BUNDLE_SOURCE: local
+      additional_contexts:
+        localbundle: ./dist
