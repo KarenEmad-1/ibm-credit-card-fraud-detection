@@ -2,7 +2,7 @@
 
 End-to-end fraud detection on **24.4 million** credit card transactions (IBM's synthetic dataset, 2,000 users, 1991–2020). The work starts with a careful EDA and a leakage-checked feature pipeline before any model is trained.
 
-> **Status:** EDA ✅ · Split and features ✅ · Feature selection ✅ · Models next
+> **Status:** complete. All four models were scored once on the 2019 test year (see [Results](#results-2019-test-year)).
 
 ## Key findings so far
 
@@ -31,12 +31,34 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 2. ~~Checked table joins, chronological split and feature engineering~~ ([`02_features_split.ipynb`](notebooks/02_features_split.ipynb))
 3. ~~Feature selection with four techniques: correlation + mutual information, L1 logistic regression, CatBoost importance, permutation importance~~ ([`03_feature_selection.ipynb`](notebooks/03_feature_selection.ipynb))
 4. ~~Traditional models: logistic regression and Random Forest, tuned with Optuna~~ ([`04_traditional_models.ipynb`](notebooks/04_traditional_models.ipynb))
-5. CatBoost, then tuning
-6. FT-Transformer (deep learning for tabular data), then tuning
-7. Ablations: geographic shortcut, user-snapshot leakage, per-segment performance
-8. Final evaluation of all models on the 2019 test year (once), with bootstrap confidence intervals and SHAP
+5. ~~CatBoost, then tuning~~ ([`05_catboost.ipynb`](notebooks/05_catboost.ipynb))
+6. ~~FT-Transformer (deep learning for tabular data), then tuning~~ ([`06_ft_transformer.ipynb`](notebooks/06_ft_transformer.ipynb))
+7. ~~Ablations: geographic shortcut, user-snapshot leakage, per-segment performance~~ ([`07_ablations.ipynb`](notebooks/07_ablations.ipynb))
+8. ~~Final evaluation of all models on the 2019 test year (once), with bootstrap confidence intervals and SHAP~~ ([`08_final_evaluation.ipynb`](notebooks/08_final_evaluation.ipynb))
 
 Every model uses the same split, the same metrics (PR-AUC, recall at fixed precision) and a decision threshold chosen on validation. The original reasoning behind the phases is in section 8 of the EDA notebook.
+
+## Results: 2019 test year
+
+The test year (1.72M transactions, 2,087 frauds) was scored **once**, after every model, feature set and threshold was frozen on validation. **B** is the headline variant: geography removed (`is_international`, `zip_freq`). **A** keeps it.
+
+| Model | Val PR-AUC (B) | **Test PR-AUC (B)** | 95% bootstrap CI | Test PR-AUC (A) |
+|---|---|---|---|---|
+| CatBoost | 0.480 | **0.481** | 0.454–0.504 | 0.873 |
+| Random Forest | 0.483 | **0.463** | 0.443–0.485 | 0.737 |
+| FT-Transformer | 0.424 | **0.417** | 0.392–0.441 | 0.478 |
+| Logistic regression | 0.020 | **0.011** | 0.010–0.013 | 0.132 |
+
+- **Validation scores held on test.** Every B model is within 0.02 of its validation score, so model selection did not overfit validation.
+- **CatBoost and Random Forest are statistically tied** on B: CatBoost leads by 0.018, with a paired bootstrap CI of −0.012 to +0.044. Both beat FT-Transformer significantly. Gradient-boosted and bagged trees beat the deep tabular model here.
+- **The geographic shortcut is worth 0.39 PR-AUC** (CatBoost A − B, CI 0.378–0.410), which confirms the ablation finding on unseen data.
+
+**Limitations**
+- **All 2,087 test frauds are in-store international transactions**, none domestic or online (in validation, 94% were). The models are therefore tested on one fraud pattern. Within that segment, CatBoost B reaches 0.877 PR-AUC.
+- **Geography may still leak into B through `merchant_city_freq`.** It is the top SHAP feature for Random Forest B (0.39 of mean |SHAP|) and for CatBoost B and FT-Transformer B. Rare foreign cities may stand in for "international", as `zip_freq` did. The test year is spent, so this is reported here and not tested with another ablation.
+- The data is synthetic (see [Data](#data)).
+
+Figures: [`test_pr_curves.png`](reports/figures/test_pr_curves.png), [`shap_share_heatmap.png`](reports/figures/shap_share_heatmap.png), [`shap_beeswarms.png`](reports/figures/shap_beeswarms.png). Tables: `reports/test_*.csv`, `reports/shap_importance_share.csv`.
 
 ## Project structure
 
