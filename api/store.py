@@ -141,7 +141,13 @@ class SplitData:
                 from src.modeling import categorical_in
                 cols = sorted({c for e in self._explainer_specs().values() for c in e["features"]})
                 # Same as src.modeling.load_split, but from the configured directory
-                df = pd.read_parquet(settings.features_dir / f"features_{self.split}.parquet", columns=cols)
+                path = settings.features_dir / f"features_{self.split}.parquet"
+                # A sample bundle stores only some rows, with a txn_id column saying which;
+                # the full table has one row per transaction, in txn_id order.
+                keyed = "txn_id" in pq.read_schema(path).names
+                df = pd.read_parquet(path, columns=cols + ["txn_id"] if keyed else cols)
+                if keyed:
+                    df = df.set_index("txn_id")
                 for c in categorical_in(list(df.columns)):
                     if not isinstance(df[c].dtype, pd.CategoricalDtype):
                         df[c] = df[c].astype(str).astype("category")
@@ -181,7 +187,8 @@ class SplitData:
         from src.modeling import catboost_frame, categorical_in
         spec = self._explainer_specs()[key]
         feats = spec["features"]
-        row = self.features().iloc[[txn_id]]
+        table = self.features()
+        row = table.loc[[txn_id]] if table.index.name == "txn_id" else table.iloc[[txn_id]]
         X = catboost_frame(row, feats)
         shap = spec["model"].get_feature_importance(Pool(X, cat_features=categorical_in(feats)), type="ShapValues")[0]
         base, contrib = float(shap[-1]), shap[:-1]

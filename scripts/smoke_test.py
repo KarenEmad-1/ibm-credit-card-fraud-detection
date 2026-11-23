@@ -7,6 +7,8 @@ failed check and prints what it measured.
 Checks:
   1. /health answers and has the test split loaded
   2. the headline number is intact: CatBoost B test PR-AUC 0.4808, 2,083 alerts
+     (on a sample bundle: PR-AUC is still the full-year value; the alert count is
+     computed live on the sample, so only the sample label is checked)
   3. SHAP explanation for a transaction reproduces its saved score
   4. the alert-triage simulator returns a queue for a suggested day
   5. the replay stream (server-sent events) delivers its first events promptly,
@@ -79,10 +81,20 @@ def main() -> None:
     if round(pr_auc, 4) != EXPECTED_PR_AUC:
         fail(f"{HEADLINE} PR-AUC {pr_auc} != {EXPECTED_PR_AUC}")
     thr = get_json(base, f"/api/threshold/{key}")
-    if thr["alerts"] != EXPECTED_ALERTS:
-        fail(f"{HEADLINE} alerts at validation threshold {thr['alerts']} != {EXPECTED_ALERTS}")
-    ok(f"{HEADLINE}: PR-AUC {pr_auc:.4f}, {thr['alerts']} alerts, precision {thr['precision']:.3f}, "
-       f"recall {thr['recall']:.3f}")
+    sample = models.get("sample")
+    if sample:
+        full = models["full_year"]
+        if not (0 < models["n_transactions"] < full["n_transactions"]) or thr["alerts"] <= 0:
+            fail(f"sample bundle inconsistent: {models['n_transactions']} of {full['n_transactions']}, "
+                 f"{thr['alerts']} alerts")
+        ok(f"SAMPLE bundle {sample['start']}..{sample['end']}: {models['n_transactions']:,} of "
+           f"{full['n_transactions']:,} transactions; full-year {HEADLINE} PR-AUC {pr_auc:.4f}; "
+           f"{thr['alerts']} alerts on the sample")
+    else:
+        if thr["alerts"] != EXPECTED_ALERTS:
+            fail(f"{HEADLINE} alerts at validation threshold {thr['alerts']} != {EXPECTED_ALERTS}")
+        ok(f"{HEADLINE}: PR-AUC {pr_auc:.4f}, {thr['alerts']} alerts, precision {thr['precision']:.3f}, "
+           f"recall {thr['recall']:.3f}")
 
     # 3. SHAP reproduces the saved score of a known fraud
     fraud = get_json(base, f"/api/transactions?model={key}&kind=caught&limit=1&seed=0")["rows"][0]

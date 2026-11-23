@@ -2,6 +2,8 @@
 
     python scripts/package_demo_assets.py                 # -> dist/fraud-ops-demo-<version>.tar.gz (+ .sha256)
     python scripts/package_demo_assets.py --version v2
+    python scripts/package_demo_assets.py --sample-start 2019-01-01 --sample-end 2019-02-28
+        -> dist/fraud-ops-demo-sample-<version>.tar.gz, for hosts with ~512 MB of memory
 
 The Docker build downloads this archive and checks it against the SHA-256 pinned
 in the Dockerfile, so the image is built from exactly these bytes.
@@ -22,6 +24,12 @@ the README. The archive holds only *derived* files, never the raw 24.4M-row CSV:
   MANIFEST.json                         SHA-256 and size of every file, source commit
 
 Run it after scripts/build_dashboard_data.py --split test.
+
+Sample mode (--sample-start/--sample-end) keeps one contiguous window of the test year,
+so the replay, card timelines and triage days stay realistic. The precomputed headline
+metrics and PR curves in meta.json stay the FULL-year ones (meta["full_year"] holds the
+full-year counts); n_transactions/n_frauds/n_days describe the rows actually served, so
+everything computed live (threshold simulator, segments, triage) is labelled as sample.
 """
 from __future__ import annotations
 
@@ -36,6 +44,7 @@ import tarfile
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
 
@@ -82,12 +91,41 @@ def git_commit() -> str:
         return "unknown"
 
 
+def write_sample(start: str, end: str, out_dir: Path):
+    """Write one contiguous window of the test year; return the kept txn_ids, sorted."""
+    tx = pd.read_parquet(CACHE / "dashboard" / "test" / "transactions.parquet")
+    lo, hi = pd.Timestamp(start), pd.Timestamp(end) + pd.Timedelta(days=1)
+    keep = tx[(tx["ts"] >= lo) & (tx["ts"] < hi)]
+    if keep.empty:
+        sys.exit(f"no transactions between {start} and {end}")
+    keep.to_parquet(out_dir / "transactions.parquet", index=False)
+
+    meta = json.loads((CACHE / "dashboard" / "test" / "meta.json").read_text())
+    meta["full_year"] = {k: meta[k] for k in ("n_transactions", "n_frauds", "n_days")}
+    meta.update(n_transactions=int(len(keep)), n_frauds=int(keep["is_fraud"].sum()),
+                n_days=int(keep["ts"].dt.normalize().nunique()))
+    meta["sample"] = {
+        "start": start, "end": end,
+        "note": (f"Sample: {start} to {end} of the 2019 test year. Headline metrics and PR curves "
+                 "are the full-year results; screens computed live use only the sample."),
+    }
+    (out_dir / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    print(f"sample {start}..{end}: {meta['n_transactions']:,} of {meta['full_year']['n_transactions']:,} "
+          f"transactions, {meta['n_frauds']} of {meta['full_year']['n_frauds']} frauds, {meta['n_days']} days")
+    return np.sort(keep["txn_id"].to_numpy())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", default="v1")
+    ap.add_argument("--sample-start", help="first day kept, e.g. 2019-01-01 (sample mode)")
+    ap.add_argument("--sample-end", help="last day kept, inclusive, e.g. 2019-02-28 (sample mode)")
     args = ap.parse_args()
+    sample = bool(args.sample_start or args.sample_end)
+    if sample and not (args.sample_start and args.sample_end):
+        sys.exit("--sample-start and --sample-end go together")
 
-    name = f"fraud-ops-demo-{args.version}"
+    name = f"fraud-ops-demo-{'sample-' if sample else ''}{args.version}"
     stage = DIST / name
     if stage.exists():
         shutil.rmtree(stage)
@@ -102,8 +140,11 @@ def main() -> None:
     if missing:
         sys.exit(f"Missing inputs: {missing}. Run notebooks 07-08 and build_dashboard_data.py --split test first.")
 
-    for src in required[:2]:
-        shutil.copy2(src, stage / "dashboard" / "test" / src.name)
+    if sample:
+        rows = write_sample(args.sample_start, args.sample_end, stage / "dashboard" / "test")
+    else:
+        for src in required[:2]:
+            shutil.copy2(src, stage / "dashboard" / "test" / src.name)
     shutil.copy2(MODELS / "catboost_tuned.cbm", stage / "models" / "catboost_tuned.cbm")
     shutil.copy2(MODELS / "final" / "catboost_B.joblib", stage / "models" / "final" / "catboost_B.joblib")
     shutil.copy2(MODELS / "ablation_run.log", stage / "models" / "ablation_run.log")
@@ -115,9 +156,15 @@ def main() -> None:
     model_b = joblib.load(MODELS / "final" / "catboost_B.joblib")
     cols = sorted(set(model_a.feature_names_) | set(model_b["features"]))
     feats = pd.read_parquet(CACHE / "features_test.parquet", columns=cols)
-    n_tx = len(pd.read_parquet(stage / "dashboard" / "test" / "transactions.parquet", columns=["txn_id"]))
-    if len(feats) != n_tx:
-        sys.exit(f"features_test has {len(feats)} rows but transactions has {n_tx}: rebuild the dashboard data")
+    n_full = len(pd.read_parquet(CACHE / "dashboard" / "test" / "transactions.parquet", columns=["txn_id"]))
+    if len(feats) != n_full:
+        sys.exit(f"features_test has {len(feats)} rows but transactions has {n_full}: rebuild the dashboard data")
+    if sample:
+        # Keep the sampled rows and say which transaction each one is (the API then
+        # looks rows up by txn_id instead of by position)
+        feats = feats.iloc[rows].reset_index(drop=True)
+        feats.insert(0, "txn_id", rows.astype("int32"))
+    n_tx = len(feats)
     feats.to_parquet(stage / "features" / "features_test.parquet", index=False, compression="zstd")
 
     (stage / "NOTICE").write_text(NOTICE, encoding="utf-8")
@@ -126,7 +173,9 @@ def main() -> None:
     files = sorted(p for p in stage.rglob("*") if p.is_file())
     manifest = {
         "bundle": name, "source_commit": git_commit(),
-        "split": "test (2019, complete)", "n_transactions": n_tx, "shap_feature_columns": cols,
+        "split": (f"test (2019), SAMPLE {args.sample_start} to {args.sample_end}" if sample
+                  else "test (2019, complete)"),
+        "n_transactions": n_tx, "shap_feature_columns": cols,
         "files": {str(p.relative_to(stage)).replace("\\", "/"): {"bytes": p.stat().st_size, "sha256": sha256(p)}
                   for p in files},
     }
@@ -146,7 +195,8 @@ def main() -> None:
             else:
                 tar.addfile(info)
     digest = sha256(archive)
-    (DIST / f"{name}.tar.gz.sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    # LF even on Windows: `sha256sum -c` reads a trailing CR as part of the file name
+    (DIST / f"{name}.tar.gz.sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8", newline="\n")
     shutil.rmtree(stage)
 
     print(f"{archive.relative_to(PROJECT_ROOT)}  {archive.stat().st_size / 2**20:.1f} MiB")

@@ -152,6 +152,9 @@ build data with: python scripts/build_dashboard_data.py --split val</pre></div>`
         <div class="status">${status}</div>
       </header>
 
+      ${meta.sample ? html`<div class="sample-banner" role="note"><b>▲ SAMPLE DATA</b> ${meta.sample.start} → ${meta.sample.end}:
+        ${fmtInt(meta.n_transactions)} of ${fmtInt(meta.full_year.n_transactions)} test-year transactions (${fmtInt(meta.n_frauds)} of ${fmtInt(meta.full_year.n_frauds)} frauds).
+        PR-AUC, PR curves and SHORTCUT show the full-year results; replay, threshold simulator, segments, game, cases and triage use the sample.</div>` : null}
       <div class="brief"><span class="brief-t">${cur.key} · ${upper(cur.title)}</span><span class="brief-x">${cur.brief}</span></div>
 
       <main class="screen">${html`<${Comp} key=${`${screen}-${split}`} />`}</main>

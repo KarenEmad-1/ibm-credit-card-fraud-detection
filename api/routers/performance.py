@@ -23,7 +23,8 @@ def _model(split: str | None, key: str):
 def splits():
     return {"default": store.default_split,
             "splits": [{"split": s, "year": d.meta["year"], "built_at": d.meta["built_at"],
-                        "n_transactions": d.meta["n_transactions"], "n_frauds": d.meta["n_frauds"]}
+                        "n_transactions": d.meta["n_transactions"], "n_frauds": d.meta["n_frauds"],
+                        **({"sample": d.meta["sample"]} if "sample" in d.meta else {})}
                        for s, d in store.splits.items()]}
 
 
@@ -36,13 +37,18 @@ def models(split: str | None = None):
         ci = pd.read_csv(path).to_dict(orient="records")
     return {"split": d.split, "year": d.meta["year"], "n_transactions": d.meta["n_transactions"],
             "n_frauds": d.meta["n_frauds"], "n_days": d.meta["n_days"],
-            "models": d.meta["models"], "explainable": d.explainable(), "bootstrap_ci": ci}
+            "models": d.meta["models"], "explainable": d.explainable(), "bootstrap_ci": ci,
+            # Sample bundles only: what is served vs. what the headline metrics describe
+            **({"sample": d.meta["sample"], "full_year": d.meta["full_year"]} if "sample" in d.meta else {})}
 
 
 @router.get("/curves")
 def curves(split: str | None = None):
     d = store.get(split)
-    return {"base_rate": d.meta["n_frauds"] / d.meta["n_transactions"], "curves": d.meta["curves"]}
+    # The curves were computed on the full split, so use its base rate (a sample bundle
+    # keeps the full-year counts in meta["full_year"])
+    full = d.meta.get("full_year", d.meta)
+    return {"base_rate": full["n_frauds"] / full["n_transactions"], "curves": d.meta["curves"]}
 
 
 @router.get("/drift")

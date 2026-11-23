@@ -105,6 +105,12 @@ kbd {
   display: flex; gap: 14px; align-items: baseline; padding: 7px 16px; border-bottom: 1px solid var(--line);
   background: var(--bg); font-size: 12px; color: var(--text-2);
 }
+/* Shown only when the server runs a sample bundle (hosted free-tier demo) */
+.sample-banner {
+  padding: 6px 16px; border-bottom: 1px solid var(--bad); background: var(--bad-bg);
+  font-size: 12px; color: var(--text-2);
+}
+.sample-banner b { color: var(--bad); letter-spacing: .08em; }
 .brief-t { color: var(--phos); font-weight: 700; white-space: nowrap; letter-spacing: .08em; }
 
 .screen { padding: 12px 16px 16px; min-width: 0; }
