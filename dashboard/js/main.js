@@ -8,7 +8,7 @@ import { Lab } from "./screens/lab.js";
 
 const SCREENS = [
   { id: "tape", key: "1", label: "TAPE", title: "Live tape", Comp: Tape,
-    brief: "The year replayed in time order. Every row is a transaction scored by the model. ▲ rows go to the alert queue, and their labels arrive days later, as chargebacks do." },
+    brief: "Transactions replayed in time order. Every row is a transaction scored by the model. ▲ rows go to the alert queue, and their labels arrive days later, as chargebacks do." },
   { id: "hunt", key: "2", label: "HUNT", title: "Beat the model", Comp: Hunt,
     brief: "You're the fraud analyst. Judge 10 transactions as fraud or legit, then see whether you beat the model." },
   { id: "cases", key: "3", label: "CASES", title: "Card attack files", Comp: Cases,
@@ -23,7 +23,7 @@ const SCREENS = [
 
 const BOOT_LINES = (m) => [
   ["FRAUD-OPS v1.0 · card-fraud operations console", ""],
-  [`mounting ledger ${m.split === "test" ? "TEST-2019" : "VAL-2018"}`, `${fmtInt(m.n_transactions)} txns`],
+  [`mounting ledger ${m.split === "test" ? "TEST-2019" : "VAL-2018"}${m.sample ? " · SAMPLE" : ""}`, `${fmtInt(m.n_transactions)} txns`],
   ["labelled fraud", `${fmtInt(m.n_frauds)} (1 in ${fmtInt(m.n_transactions / m.n_frauds)})`],
   ...m.models.map((x) => [`model ${shortModel(x.key)}`, `PR-AUC ${x.metrics.pr_auc.toFixed(3)}`]),
   ["decision thresholds", "LOCKED · chosen on validation"],
@@ -59,7 +59,7 @@ function Help({ onClose }) {
       <div class="help-b">
         <p><b>What this is.</b> Fraud detection on 24.4M synthetic card transactions (IBM, 1991–2020). The models are logistic regression, random forest, CatBoost and an FT-Transformer, trained on 1991–2017 and validated on 2018. 2019 is a test year scored exactly once.</p>
         <p><b>Rules the project follows.</b> The split is chronological, per-card features use only past transactions, no feature uses fraud labels, thresholds are chosen on validation, and the test year is sealed until the end.</p>
-        <p><b>Main finding.</b> Most of the score comes from merchant geography. In this synthetic data, foreign in-store transactions are 94% of fraud. See [5] SHORTCUT.</p>
+        <p><b>Main finding.</b> Most of the score comes from merchant geography. In this synthetic data, foreign in-store transactions are 94% of 2018 validation fraud and all 2019 test fraud. See [5] SHORTCUT.</p>
         <table class="keys">
           <tr><td><kbd>1</kbd>–<kbd>6</kbd></td><td>switch screen</td><td><kbd>M</kbd></td><td>next model</td></tr>
           <tr><td><kbd>SPACE</kbd></td><td>play / pause tape</td><td><kbd>+</kbd> <kbd>−</kbd></td><td>tape speed</td></tr>
@@ -152,9 +152,9 @@ build data with: python scripts/build_dashboard_data.py --split val</pre></div>`
         <div class="status">${status}</div>
       </header>
 
-      ${meta.sample ? html`<div class="sample-banner" role="note"><b>▲ SAMPLE DATA</b> ${meta.sample.start} → ${meta.sample.end}:
+      ${meta.sample ? html`<div class="sample-banner" role="note"><b>▲ SAMPLE DATA</b> ${meta.sample.start} → ${meta.sample.end}:${" "}
         ${fmtInt(meta.n_transactions)} of ${fmtInt(meta.full_year.n_transactions)} test-year transactions (${fmtInt(meta.n_frauds)} of ${fmtInt(meta.full_year.n_frauds)} frauds).
-        PR-AUC, PR curves and SHORTCUT show the full-year results; replay, threshold simulator, segments, game, cases and triage use the sample.</div>` : null}
+        ${" "}Full-year results: PR-AUC, PR and threshold curves, model board, SHORTCUT. Sample only: replay, threshold simulator figures, segments, game, cases and triage.</div>` : null}
       <div class="brief"><span class="brief-t">${cur.key} · ${upper(cur.title)}</span><span class="brief-x">${cur.brief}</span></div>
 
       <main class="screen">${html`<${Comp} key=${`${screen}-${split}`} />`}</main>

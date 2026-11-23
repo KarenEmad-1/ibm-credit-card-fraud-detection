@@ -1,5 +1,5 @@
 import { html, useState, useEffect, useMemo, useApp, api, Pane, useD3, d3, tip, fmtMoney, fmtInt, fmtK, tsFull, tsDate,
-  place, upper, mccName, cssVar, shortModel } from "../lib.js";
+  place, upper, mccName, cssVar, shortModel, period } from "../lib.js";
 
 export function Cases() {
   const { split, model, setStatus, meta } = useApp();
@@ -29,7 +29,7 @@ export function Cases() {
   useEffect(() => { if (sel) setStatus(`CASE u${sel.user}·c${sel.card} · ${sel.frauds} frauds`); }, [sel]);
 
   return html`<div class="grid g-cases">
-    <${Pane} cls="flush" title="COMPROMISED CARDS" right=${`top 40 · ${meta.year}`}>
+    <${Pane} cls="flush" title="COMPROMISED CARDS" right=${`top 40 · ${period(meta)}`}>
       <div class="scroll" style="max-height: 640px">
         <table class="tbl click">
           <thead><tr><th>CARD</th><th class="num">FRAUD</th><th class="num">CAUGHT</th><th>WHERE</th></tr></thead>
@@ -42,7 +42,7 @@ export function Cases() {
     </${Pane}>
 
     <div class="stack">
-      <${Pane} title=${sel ? `CASE FILE · u${sel.user}·c${sel.card}` : "CASE FILE"} right=${tl ? `${fmtInt(tl.rows.length)} transactions in ${meta.year} · drag the bottom strip to zoom` : ""}>
+      <${Pane} title=${sel ? `CASE FILE · u${sel.user}·c${sel.card}` : "CASE FILE"} right=${tl ? `${fmtInt(tl.rows.length)} transactions in ${period(meta)} · drag the bottom strip to zoom` : ""}>
         ${story ? html`<div class="case-sum">
           <span>FIRST FRAUD <b>${tsFull(story.firstFraud)}</b></span>
           <span>FIRST CATCH ${story.firstCatch ? html`<b>${tsFull(story.firstCatch)}</b>` : html`<b class="bad">NEVER</b>`}</span>

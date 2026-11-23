@@ -18,14 +18,15 @@ export function Lab() {
   useEffect(() => { setSeg(null); api(`/api/segments/${encodeURIComponent(model)}`, {}, split).then(setSeg); }, [model]);
   useEffect(() => { setStatus(`${meta.split === "test" ? "TEST" : "VAL"}-${meta.year} · ${fmtInt(meta.n_transactions)} TXNS · ${fmtInt(meta.n_frauds)} FRAUD`); }, []);
 
+  const highRoc = meta.models.filter((m) => m.metrics.roc_auc > 0.98).length;
   const best = (f) => Math.max(...meta.models.map((m) => m.metrics[f]));
   return html`<div class="stack">
     <div class="grid g-lab">
-      <${Pane} title="PRECISION · RECALL" right=${curves ? `random = ${fmtPct(curves.base_rate, 2)}` : ""}>
+      <${Pane} title="PRECISION · RECALL" right=${curves ? `${meta.sample ? "full year · " : ""}random = ${fmtPct(curves.base_rate, 2)}` : ""}>
         <div class="legend">${meta.models.map((m) => html`<span><i style=${`background:${modelColor(m.key)}`}></i>${shortModel(m.key)} ${m.metrics.pr_auc.toFixed(3)}</span>`)}</div>
         ${curves ? html`<${PRChart} curves=${curves} models=${meta.models} />` : html`<div class="chart-box tall muted blink">loading…</div>`}
       </${Pane}>
-      <${Pane} cls="flush" title="MODEL BOARD" right="thresholds chosen on validation (max F1)">
+      <${Pane} cls="flush" title="MODEL BOARD" right=${`${meta.sample ? "full year · " : ""}thresholds chosen on validation (max F1)`}>
         <table class="tbl">
           <thead><tr><th>MODEL</th><th class="num">PR-AUC</th><th class="num">R@P≥.5</th><th class="num">P@TOP.1%</th><th class="num">P@THR</th><th class="num">R@THR</th><th class="num">ALERTS</th></tr></thead>
           <tbody>${meta.models.map((m) => {
@@ -36,7 +37,7 @@ export function Lab() {
           })}</tbody>
         </table>
         <div class="prose" style="padding:10px">
-          <p>PR-AUC is the headline because fraud is 0.14% of traffic. At that rate ROC-AUC is above 0.98 for every model and can't tell them apart. FT-Transformer's ${fmt3(meta.models.find((m) => m.key.startsWith("FT"))?.metrics.pr_auc)} is the 3-seed average after stabilising, with no picking of the best epoch on validation.</p>
+          <p>PR-AUC is the headline because fraud is ${curves ? fmtPct(curves.base_rate, 2) : "—"} of traffic. At that rate ROC-AUC is above 0.98 for ${highRoc === meta.models.length ? "every model" : `${highRoc} of the ${meta.models.length} models`} and barely tells them apart. FT-Transformer's ${fmt3(meta.models.find((m) => m.key.startsWith("FT"))?.metrics.pr_auc)} is the 3-seed average after stabilising, with no picking of the best epoch on validation.</p>
         </div>
       </${Pane}>
     </div>
@@ -48,15 +49,16 @@ export function Lab() {
             onInput=${(e) => { const v = +e.target.value; setT(v === Math.round(modelMeta.threshold * 1000) ? modelMeta.threshold : v / 1000); }} />
           <b>${t.toFixed(3)}</b></div>
         ${r ? html`<div class="kpis">
-          ${k("ALERTS/DAY", r.alerts_per_day.toFixed(1), `${fmtInt(r.alerts)} in the year`)}
+          ${k("ALERTS/DAY", r.alerts_per_day.toFixed(1), `${fmtInt(r.alerts)} in the ${meta.sample ? "sample" : "year"}`)}
           ${k("PRECISION", fmtPct(r.precision), "alerts that are fraud")}
           ${k("RECALL", fmtPct(r.recall), `${fmtInt(r.fn)} frauds missed`)}
           ${k("FALSE/CATCH", (r.fp / Math.max(r.tp, 1)).toFixed(2), `${fmtInt(r.fp)} false alerts`, "bad")}
           ${k("$ CAUGHT", fmtK(r.fraud_amount_caught), `${fmtPct(r.fraud_amount_caught / r.fraud_amount_total)} of fraud $`, "ok")}
         </div>` : null}
+        ${meta.sample ? html`<div class="muted" style="font-size:11px;margin-top:8px">figures above: sample · curve below: full year</div>` : null}
         ${curves ? html`<${ThrChart} c=${curves.curves[model]} t=${t} vt=${modelMeta.threshold} />` : null}
       </${Pane}>
-      <${Pane} cls="flush" title=${`SEGMENTS · ${shortModel(model)}`} right="at the validation threshold">
+      <${Pane} cls="flush" title=${`SEGMENTS · ${shortModel(model)}`} right=${`${meta.sample ? "sample · " : ""}at the validation threshold`}>
         <div class="scroll" style="max-height:470px">
           <table class="tbl">
             <thead><tr><th>SEGMENT</th><th class="num">TXNS</th><th class="num">FRAUD</th><th class="num">RATE</th><th class="num">PR-AUC</th><th class="num">PREC</th><th class="num">RECALL</th></tr></thead>

@@ -23,6 +23,8 @@ export async function api(path, params = {}, split = null) {
 // ------------------------------------------------------------------ format
 export const fmtInt = (n) => (n == null ? "—" : Math.round(n).toLocaleString("en-US"));
 export const fmtPct = (x, d = 1) => (x == null || isNaN(x) ? "—" : `${(x * 100).toFixed(d)}%`);
+// What the served rows cover: the whole year, or the window of a sample bundle
+export const period = (meta) => (meta.sample ? `${meta.sample.start} → ${meta.sample.end}` : `${meta.year}`);
 export const fmt3 = (x) => (x == null ? "—" : x.toFixed(3));
 export const fmtMoney = (x, d = 2) => (x == null ? "—" : `$${Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}`);
 export const fmtK = (x) => (x == null ? "—" : Math.abs(x) >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : Math.abs(x) >= 1e3 ? `$${(x / 1e3).toFixed(1)}k` : `$${x.toFixed(0)}`);

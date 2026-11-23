@@ -10,7 +10,10 @@ export function Shortcut() {
 
   useEffect(() => {
     api("/api/ablations").then(setAbl);
-    if (cb) api(`/api/segments/${encodeURIComponent(cb)}`, {}, split).then((r) => setSeg(r.rows.filter((x) => x.segment === "Merchant location")));
+    // A sample bundle carries the full-year rates: this screen is the main finding
+    const fullYear = meta.full_year?.merchant_location;
+    if (fullYear) setSeg(fullYear);
+    else if (cb) api(`/api/segments/${encodeURIComponent(cb)}`, {}, split).then((r) => setSeg(r.rows.filter((x) => x.segment === "Merchant location")));
     api("/api/curves", {}, split).then(setCurves);
   }, []);
   useEffect(() => {

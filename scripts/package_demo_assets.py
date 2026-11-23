@@ -91,6 +91,20 @@ def git_commit() -> str:
         return "unknown"
 
 
+def merchant_location(tx: pd.DataFrame) -> list[dict]:
+    """Fraud rate by merchant location, in the shape /api/segments returns (SHORTCUT screen)."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from api.store import SplitData            # the API's own segment definition
+    labels = pd.Series(np.asarray(SplitData.SEGMENTS["Merchant location"](tx)), index=tx.index)
+    total = int(tx["is_fraud"].sum())
+    rows = []
+    for level, y in tx["is_fraud"].groupby(labels):
+        frauds = int(y.sum())
+        rows.append({"segment": "Merchant location", "level": str(level), "transactions": int(len(y)),
+                     "frauds": frauds, "fraud_rate": frauds / len(y), "share_of_all_fraud": frauds / total})
+    return rows
+
+
 def write_sample(start: str, end: str, out_dir: Path):
     """Write one contiguous window of the test year; return the kept txn_ids, sorted."""
     tx = pd.read_parquet(CACHE / "dashboard" / "test" / "transactions.parquet")
@@ -102,12 +116,14 @@ def write_sample(start: str, end: str, out_dir: Path):
 
     meta = json.loads((CACHE / "dashboard" / "test" / "meta.json").read_text())
     meta["full_year"] = {k: meta[k] for k in ("n_transactions", "n_frauds", "n_days")}
+    meta["full_year"]["merchant_location"] = merchant_location(tx)
     meta.update(n_transactions=int(len(keep)), n_frauds=int(keep["is_fraud"].sum()),
                 n_days=int(keep["ts"].dt.normalize().nunique()))
     meta["sample"] = {
         "start": start, "end": end,
-        "note": (f"Sample: {start} to {end} of the 2019 test year. Headline metrics and PR curves "
-                 "are the full-year results; screens computed live use only the sample."),
+        "note": (f"Sample: {start} to {end} of the 2019 test year. Headline metrics, PR curves and "
+                 "the fraud rate by merchant location are the full-year results; everything "
+                 "computed live uses only the sample."),
     }
     (out_dir / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     print(f"sample {start}..{end}: {meta['n_transactions']:,} of {meta['full_year']['n_transactions']:,} "

@@ -8,7 +8,8 @@ Checks:
   1. /health answers and has the test split loaded
   2. the headline number is intact: CatBoost B test PR-AUC 0.4808, 2,083 alerts
      (on a sample bundle: PR-AUC is still the full-year value; the alert count is
-     computed live on the sample, so only the sample label is checked)
+     computed live on the sample, so only the sample label is checked); the SHORTCUT
+     screen's fraud rate by merchant location is the full-year one on every bundle
   3. SHAP explanation for a transaction reproduces its saved score
   4. the alert-triage simulator returns a queue for a suggested day
   5. the replay stream (server-sent events) delivers its first events promptly,
@@ -27,6 +28,7 @@ from urllib.parse import quote
 HEADLINE = "CatBoost B"
 EXPECTED_PR_AUC = 0.4808          # README: CatBoost B, 2019 test year
 EXPECTED_ALERTS = 2083
+EXPECTED_INTL = (13_329, 2_087)   # foreign in-store transactions and frauds, full 2019 test year
 SSE_FIRST_EVENT_LIMIT_S = 10.0    # generous: a free host may be slow, but it must stream
 
 
@@ -95,6 +97,15 @@ def main() -> None:
             fail(f"{HEADLINE} alerts at validation threshold {thr['alerts']} != {EXPECTED_ALERTS}")
         ok(f"{HEADLINE}: PR-AUC {pr_auc:.4f}, {thr['alerts']} alerts, precision {thr['precision']:.3f}, "
            f"recall {thr['recall']:.3f}")
+
+    # 2b. SHORTCUT's fraud rate by merchant location, from where that screen reads it
+    rows = (models["full_year"].get("merchant_location", []) if sample
+            else get_json(base, f"/api/segments/{key}")["rows"])
+    intl = next((r for r in rows if r["segment"] == "Merchant location" and r["level"] == "International"), None)
+    if intl is None or (intl["transactions"], intl["frauds"]) != EXPECTED_INTL:
+        fail(f"SHORTCUT full-year international segment {intl} != {EXPECTED_INTL}")
+    ok(f"SHORTCUT: full-year fraud rate at foreign merchants {intl['fraud_rate']:.1%} "
+       f"({intl['frauds']:,} of {intl['transactions']:,})")
 
     # 3. SHAP reproduces the saved score of a known fraud
     fraud = get_json(base, f"/api/transactions?model={key}&kind=caught&limit=1&seed=0")["rows"][0]
