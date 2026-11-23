@@ -16,7 +16,7 @@ ARG NODE_IMAGE=node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa53
 ARG BUNDLE_SOURCE=remote
 ARG BUNDLE_NAME=fraud-ops-demo-v1
 ARG BUNDLE_URL=https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/releases/download/demo-data-v1/fraud-ops-demo-v1.tar.gz
-ARG BUNDLE_SHA256=b077958c1d635fc6d8e63c56a28aed41eb826b16b65029ef1779600260e53746
+ARG BUNDLE_SHA256=a09c2e1142666dc560cad59356f69a1fbaa43afe28cef68f673f23c0332448ee
 
 
 # ---------------------------------------------------------------- frontend
