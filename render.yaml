@@ -1,0 +1,26 @@
+# Render Blueprint: the live demo on a free web service (512 MB RAM, 0.1 CPU).
+#
+# The full 2019 test year does not fit in 512 MB, so this builds the same Dockerfile
+# with the January 2019 sample bundle. Render passes envVars both to the Docker build
+# (as build args) and to the running container; CI's `sample` job reads this file and
+# does the same, so what it tests is what Render runs.
+services:
+  - type: web
+    name: fraud-ops-demo
+    runtime: docker
+    plan: free                        # explicit: Render's default plan is a paid one
+    region: frankfurt                 # cannot be changed after the service is created
+    branch: main
+    autoDeployTrigger: checksPass     # deploy only commits whose CI passed
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: BUNDLE_NAME
+        value: fraud-ops-demo-sample-v1
+      - key: BUNDLE_URL
+        value: https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/releases/download/demo-data-v1/fraud-ops-demo-sample-v1.tar.gz
+      - key: BUNDLE_SHA256
+        value: a8ed4b1be2b66138c5d896d9c4ff1e24ea062e175601fd8fb83d8bb9207df2a9

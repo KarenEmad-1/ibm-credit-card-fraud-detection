@@ -1,4 +1,4 @@
-"""Smoke-test a running FRAUD-OPS server: python scripts/smoke_test.py <base-url> [--expect-vendored]
+"""Smoke-test a running FRAUD-OPS server: python scripts/smoke_test.py <base-url> [--expect-vendored] [--expect-sample]
 
 Used by CI against the freshly built image, and against the live demo URL after a
 deploy. Standard library only, so it runs anywhere. Exits non-zero on the first
@@ -9,7 +9,8 @@ Checks:
   2. the headline number is intact: CatBoost B test PR-AUC 0.4808, 2,083 alerts
      (on a sample bundle: PR-AUC is still the full-year value; the alert count is
      computed live on the sample, so only the sample label is checked); the SHORTCUT
-     screen's fraud rate by merchant location is the full-year one on every bundle
+     screen's fraud rate by merchant location is the full-year one on every bundle;
+     --expect-sample fails if the server has the full bundle instead
   3. SHAP explanation for a transaction reproduces its saved score
   4. the alert-triage simulator returns a queue for a suggested day
   5. the replay stream (server-sent events) delivers its first events promptly,
@@ -55,6 +56,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("base_url")
     ap.add_argument("--expect-vendored", action="store_true", help="page must not load scripts from a CDN")
+    ap.add_argument("--expect-sample", action="store_true", help="server must run a sample bundle")
     ap.add_argument("--wait", type=float, default=0, help="seconds to keep retrying /health (cold starts)")
     args = ap.parse_args()
     base = args.base_url.rstrip("/")
@@ -84,6 +86,8 @@ def main() -> None:
         fail(f"{HEADLINE} PR-AUC {pr_auc} != {EXPECTED_PR_AUC}")
     thr = get_json(base, f"/api/threshold/{key}")
     sample = models.get("sample")
+    if args.expect_sample and not sample:
+        fail("expected a sample bundle, server has the full one")
     if sample:
         full = models["full_year"]
         if not (0 < models["n_transactions"] < full["n_transactions"]) or thr["alerts"] <= 0:
