@@ -13,7 +13,17 @@ export const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
 // ------------------------------------------------------------------ api
+// The GitHub Pages build sets this meta tag: no server, so an in-browser backend answers.
+export const STATIC = document.querySelector('meta[name="fraud-ops-backend"]')?.content === "static";
+const backend = STATIC ? import("./static-backend.js").then((m) => m.createBackend()) : null;
+
+/** Live replay events: the API's event stream, or the in-browser equivalent. */
+export async function openReplay(params) {
+  return backend ? (await backend).openReplay(params) : new EventSource(`/api/replay?${new URLSearchParams(params)}`);
+}
+
 export async function api(path, params = {}, split = null) {
+  if (backend) return (await backend).handle(path, params);
   const q = new URLSearchParams(Object.fromEntries(Object.entries({ ...params, split }).filter(([, v]) => v != null)));
   const r = await fetch(`${path}?${q}`);
   if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);

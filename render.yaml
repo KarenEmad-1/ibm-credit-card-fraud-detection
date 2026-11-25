@@ -1,4 +1,6 @@
-# Render Blueprint: the live demo on a free web service (512 MB RAM, 0.1 CPU).
+# Render Blueprint for a free web service (512 MB RAM, 0.1 CPU). Not deployed: Render asked
+# for a payment card, so the live demo is the static site on GitHub Pages. CI still uses
+# this file to build and test the sample image.
 #
 # The full 2019 test year does not fit in 512 MB, so this builds the same Dockerfile
 # with the January 2019 sample bundle. Render passes envVars both to the Docker build

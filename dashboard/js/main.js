@@ -1,4 +1,4 @@
-import { html, render, useState, useEffect, useRef, useCallback, Ctx, api, fmtInt, upper, shortModel, modelColor, Key } from "./lib.js";
+import { html, render, useState, useEffect, useRef, useCallback, Ctx, api, STATIC, fmtInt, upper, shortModel, modelColor, Key } from "./lib.js";
 import { Tape } from "./screens/tape.js";
 import { Hunt } from "./screens/hunt.js";
 import { Cases } from "./screens/cases.js";
@@ -115,6 +115,11 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [help, cycleModel]);
 
+  if (err && STATIC) return html`<div class="fatal"><pre>FRAUD-OPS · cannot load the demo data
+
+${err}
+
+reload the page to try again</pre></div>`;
   if (err) return html`<div class="fatal"><pre>FRAUD-OPS · cannot reach the API
 
 ${err}
@@ -154,7 +159,8 @@ build data with: python scripts/build_dashboard_data.py --split val</pre></div>`
 
       ${meta.sample ? html`<div class="sample-banner" role="note"><b>▲ SAMPLE DATA</b> ${meta.sample.start} → ${meta.sample.end}:${" "}
         ${fmtInt(meta.n_transactions)} of ${fmtInt(meta.full_year.n_transactions)} test-year transactions (${fmtInt(meta.n_frauds)} of ${fmtInt(meta.full_year.n_frauds)} frauds).
-        ${" "}Full-year results: PR-AUC, PR and threshold curves, model board, SHORTCUT. Sample only: replay, threshold simulator figures, segments, game, cases and triage.</div>` : null}
+        ${" "}Full-year results: PR-AUC, PR and threshold curves, model board, SHORTCUT. Sample only: replay, threshold simulator figures, segments, game, cases and triage.
+        ${STATIC ? " Static demo, no server: scores, segments and SHAP were computed in advance, the rest runs in your browser." : ""}</div>` : null}
       <div class="brief"><span class="brief-t">${cur.key} · ${upper(cur.title)}</span><span class="brief-x">${cur.brief}</span></div>
 
       <main class="screen">${html`<${Comp} key=${`${screen}-${split}`} />`}</main>

@@ -183,22 +183,29 @@ class SplitData:
         return list(self._explainer_specs())
 
     def explain(self, key: str, txn_id: int, top: int = 12) -> dict:
+        return self.explain_many(key, [txn_id], top)[0]
+
+    def explain_many(self, key: str, txn_ids: list[int], top: int = 12) -> list[dict]:
         from catboost import Pool
         from src.modeling import catboost_frame, categorical_in
         spec = self._explainer_specs()[key]
         feats = spec["features"]
         table = self.features()
-        row = table.loc[[txn_id]] if table.index.name == "txn_id" else table.iloc[[txn_id]]
-        X = catboost_frame(row, feats)
-        shap = spec["model"].get_feature_importance(Pool(X, cat_features=categorical_in(feats)), type="ShapValues")[0]
-        base, contrib = float(shap[-1]), shap[:-1]
-        order = np.argsort(-np.abs(contrib))
-        items = [{"feature": feats[i], "value": _jsonable(X.iloc[0, i]), "shap": float(contrib[i])} for i in order[:top]]
-        rest = float(contrib[order[top:]].sum()) if len(order) > top else 0.0
-        logit = base + float(contrib.sum())
-        return {"model": key, "txn_id": txn_id, "base_logit": base, "logit": logit,
-                "probability": float(1 / (1 + np.exp(-logit))), "contributions": items,
-                "other_features": {"count": max(len(order) - top, 0), "shap": rest}}
+        rows = table.loc[txn_ids] if table.index.name == "txn_id" else table.iloc[txn_ids]
+        X = catboost_frame(rows, feats)
+        values = spec["model"].get_feature_importance(Pool(X, cat_features=categorical_in(feats)), type="ShapValues")
+        out = []
+        for n, (txn_id, shap) in enumerate(zip(txn_ids, values, strict=True)):
+            base, contrib = float(shap[-1]), shap[:-1]
+            order = np.argsort(-np.abs(contrib))
+            items = [{"feature": feats[i], "value": _jsonable(X.iloc[n, i]), "shap": float(contrib[i])}
+                     for i in order[:top]]
+            rest = float(contrib[order[top:]].sum()) if len(order) > top else 0.0
+            logit = base + float(contrib.sum())
+            out.append({"model": key, "txn_id": txn_id, "base_logit": base, "logit": logit,
+                        "probability": float(1 / (1 + np.exp(-logit))), "contributions": items,
+                        "other_features": {"count": max(len(order) - top, 0), "shap": rest}})
+        return out
 
 
 def _jsonable(v):

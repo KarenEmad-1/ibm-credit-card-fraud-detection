@@ -1,4 +1,4 @@
-import { html, useState, useEffect, useRef, useApp, Pane, ScoreBar, Verdict, Tween, useD3, d3, tip,
+import { html, useState, useEffect, useRef, useApp, openReplay, Pane, ScoreBar, Verdict, Tween, useD3, d3, tip,
   fmtInt, fmtPct, fmtMoney, fmtK, tsFull, tsTime, place, upper, cssVar, Key } from "../lib.js";
 
 const SPEEDS = [{ v: 30, l: "30m/s" }, { v: 120, l: "2h/s" }, { v: 360, l: "6h/s" }, { v: 1440, l: "1d/s" }, { v: 4320, l: "3d/s" }];
@@ -11,7 +11,6 @@ export function Tape() {
   const [speedI, setSpeedI] = useState(2);
   const [delay, setDelay] = useState(3);
   const [s, setS] = useState(() => fresh(meta));
-  const es = useRef(null);
   const simRef = useRef(s.sim);
 
   // reset first, so the stream below starts from the new model's first day
@@ -20,10 +19,8 @@ export function Tape() {
   // ---------------------------------------------------------------- stream
   useEffect(() => {
     if (!playing) return;
-    const q = new URLSearchParams({ model, speed: SPEEDS[speedI].v, split, start: new Date(simRef.current * 1000).toISOString().slice(0, 19) });
-    const src = new EventSource(`/api/replay?${q}`);
-    es.current = src;
-    src.addEventListener("tick", (ev) => {
+    let src = null, stopped = false;
+    const onTick = (ev) => {
       const d = JSON.parse(ev.data);
       simRef.current = d.sim_time;
       setS((p) => {
@@ -38,11 +35,16 @@ export function Tape() {
           alerts: [...d.alert_rows.slice().reverse(), ...p.alerts], hours,
         };
       });
+    };
+    openReplay({ model, speed: SPEEDS[speedI].v, split, start: new Date(simRef.current * 1000).toISOString().slice(0, 19) }).then((source) => {
+      if (stopped) { source.close(); return; }
+      src = source;
+      src.addEventListener("tick", onTick);
+      src.addEventListener("day", (ev) => { const d = JSON.parse(ev.data); setS((p) => ({ ...p, days: [...p.days, d] })); });
+      src.addEventListener("end", () => setPlaying(false));
+      src.onerror = () => { src.close(); };
     });
-    src.addEventListener("day", (ev) => { const d = JSON.parse(ev.data); setS((p) => ({ ...p, days: [...p.days, d] })); });
-    src.addEventListener("end", () => setPlaying(false));
-    src.onerror = () => { src.close(); };
-    return () => src.close();
+    return () => { stopped = true; src?.close(); };
   }, [playing, speedI, model, split]);
 
   // ---------------------------------------------------------------- keys + status

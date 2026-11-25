@@ -4,6 +4,8 @@
 
 End-to-end fraud detection on **24.4 million** credit card transactions (IBM's synthetic dataset, 2,000 users, 1991–2020). The work starts with a careful EDA and a leakage-checked feature pipeline before any model is trained.
 
+> **Live demo:** https://karenemad-1.github.io/ibm-credit-card-fraud-detection/ (static, January 2019 sample, see [CI and deployment](#ci-and-deployment))
+>
 > **Status:** complete. All four models were scored once on the 2019 test year (see [Results](#results-2019-test-year)).
 
 ## Key findings
@@ -113,8 +115,11 @@ The container holds about 1 GiB in memory. The data and models come from a [GitH
 2. **Test:** pytest runs inside the image's own `test` stage, with the same OS, Python and locked packages as production.
 3. **Image:** builds the full image and runs [`smoke_test.py`](scripts/smoke_test.py) against it. The test checks the headline PR-AUC (0.4808), the alert count, that SHAP contributions add up to the saved score, and that the live replay streams. On `main`, the image is then published to GHCR.
 4. **Sample:** builds the image that [`render.yaml`](render.yaml) describes and smoke-tests it under a hard 512 MB limit with no swap.
+5. **Static site:** exports the dashboard from that image and compares it with the running API, request by request ([`check_static_site.mjs`](scripts/check_static_site.mjs)). On `main`, the site is then published to GitHub Pages.
 
-**Sample mode.** The full test year does not fit in the 512 MB of a free host, so `render.yaml` uses a January 2019 bundle (146,097 transactions, 203 frauds). The headline metrics and PR curves there are still the full-year ones. Everything computed live, such as the threshold simulator and triage, uses the sample, and the dashboard shows a SAMPLE DATA banner.
+**Live demo.** GitHub Pages runs no Python, so the live demo is a static copy of the dashboard. [`export_static_site.py`](scripts/export_static_site.py) saves the scores, segments and SHAP explanations through the API's own code, and [`static-backend.js`](dashboard/js/static-backend.js) does the rest in the browser: replay, threshold simulator, triage and card timelines. SHAP is precomputed for about 3,400 transactions, so the game draws from those. The FastAPI service itself runs from the Docker image above.
+
+**Sample mode.** The full test year does not fit in 512 MB or in a browser page, so the sample image and the live demo use a January 2019 bundle (146,097 transactions, 203 frauds). The headline metrics and PR curves there are still the full-year ones. Everything computed live, such as the threshold simulator and triage, uses the sample, and the dashboard shows a SAMPLE DATA banner.
 
 ## Project structure
 
@@ -152,14 +157,16 @@ The container holds about 1 GiB in memory. The data and models come from a [GitH
 ├── scripts/
 │   ├── build_dashboard_data.py   # gathers saved scores into the dashboard's data
 │   ├── package_demo_assets.py    # packs the demo data and models for a GitHub Release
-│   └── smoke_test.py             # checks a running server, used by CI
+│   ├── smoke_test.py             # checks a running server, used by CI
+│   ├── export_static_site.py     # builds the GitHub Pages demo
+│   └── check_static_site.mjs     # compares the demo with the API
 ├── tests/
 │   └── test_leakage.py       # truncation, brute-force recount and encoder leakage tests
 ├── .github/workflows/ci.yml  # lint, test, build, smoke test, publish
 ├── deploy/nginx.conf         # optional proxy for testing the live replay
 ├── Dockerfile
 ├── docker-compose.yml
-├── render.yaml               # Render blueprint: the free 512 MB demo
+├── render.yaml               # 512 MB sample image settings, used by CI
 ├── environment.yml
 ├── requirements.txt          # full project (notebooks)
 ├── requirements-serve.lock   # hashed packages for the image
