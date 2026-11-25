@@ -1,5 +1,7 @@
 # Credit Card Fraud Detection: IBM Synthetic Transactions
 
+[![CI](https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/actions/workflows/ci.yml)
+
 End-to-end fraud detection on **24.4 million** credit card transactions (IBM's synthetic dataset, 2,000 users, 1991–2020). The work starts with a careful EDA and a leakage-checked feature pipeline before any model is trained.
 
 > **Status:** complete. All four models were scored once on the 2019 test year (see [Results](#results-2019-test-year)).
@@ -15,7 +17,7 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 | A first purchase at a new merchant is **12.8× more likely** to be fraud | Per-card history features carry real signal |
 | Missing merchant state/zip is structural (online transactions) | Encoded explicitly, not imputed |
 | Four selection methods agree on dropping 6 of 36 features, with no loss in validation PR-AUC | Every model uses the same 30 selected features |
-| Adding `merchant_state` raises validation PR-AUC from 0.73 to 0.90 | The geographic shortcut is large, so results are reported with and without it |
+| Tuned CatBoost has a validation PR-AUC of 0.900 with `merchant_state`, 0.864 without it and 0.480 with the direct geography features removed | The geographic shortcut is large, so results are reported with and without it |
 | User snapshot features (age, income, FICO…) add nothing | Excluded: leakage risk with no benefit |
 
 ## Approach
@@ -84,6 +86,36 @@ uvicorn api.main:app --port 8000                      # open http://localhost:80
 
 `M` cycles the model, `T` switches between amber and green phosphor, and `?` opens help. API docs are at `/docs`.
 
+## Run it with Docker
+
+No Python, no Kaggle download and no training needed. Either command serves the full 2019 test year on http://localhost:8000:
+
+```bash
+docker run --rm -p 8000:8000 ghcr.io/karenemad-1/ibm-credit-card-fraud-detection:latest   # published by CI
+docker compose up --build                                                                 # built from this repo
+```
+
+The container holds about 1 GiB in memory. The data and models come from a [GitHub Release](https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/releases/tag/demo-data-v1) of derived files only, never the raw CSV.
+
+| Design choice | Why |
+|---|---|
+| Multi-stage build: frontend, dependencies, tests, data bundle, runtime | Build tools and test packages stay out of the final image |
+| Base images pinned by digest, Python packages by hash, the data bundle by SHA-256 | A rebuild uses the same inputs, and a changed download fails the build |
+| Preact, D3 and fonts copied into the image | The page works with no CDN at runtime |
+| Unprivileged user, and a read-only filesystem under Compose | The app only reads, so it cannot modify its own code or data |
+| `/health` answers only once the data is loaded | The host sends no traffic to an app that is still starting |
+
+## CI and deployment
+
+[`ci.yml`](.github/workflows/ci.yml) runs on every push:
+
+1. **Lint** with Ruff.
+2. **Test:** pytest runs inside the image's own `test` stage, with the same OS, Python and locked packages as production.
+3. **Image:** builds the full image and runs [`smoke_test.py`](scripts/smoke_test.py) against it. The test checks the headline PR-AUC (0.4808), the alert count, that SHAP contributions add up to the saved score, and that the live replay streams. On `main`, the image is then published to GHCR.
+4. **Sample:** builds the image that [`render.yaml`](render.yaml) describes and smoke-tests it under a hard 512 MB limit with no swap.
+
+**Sample mode.** The full test year does not fit in the 512 MB of a free host, so `render.yaml` uses a January 2019 bundle (146,097 transactions, 203 frauds). The headline metrics and PR curves there are still the full-year ones. Everything computed live, such as the threshold simulator and triage, uses the sample, and the dashboard shows a SAMPLE DATA banner.
+
 ## Project structure
 
 ```
@@ -118,11 +150,19 @@ uvicorn api.main:app --port 8000                      # open http://localhost:80
 │   └── routers/              # performance, replay (SSE), play (game/triage), transactions
 ├── dashboard/                # Preact + htm + D3 frontend, no build step
 ├── scripts/
-│   └── build_dashboard_data.py   # gathers saved scores into the dashboard's data
+│   ├── build_dashboard_data.py   # gathers saved scores into the dashboard's data
+│   ├── package_demo_assets.py    # packs the demo data and models for a GitHub Release
+│   └── smoke_test.py             # checks a running server, used by CI
 ├── tests/
 │   └── test_leakage.py       # truncation, brute-force recount and encoder leakage tests
+├── .github/workflows/ci.yml  # lint, test, build, smoke test, publish
+├── deploy/nginx.conf         # optional proxy for testing the live replay
+├── Dockerfile
+├── docker-compose.yml
+├── render.yaml               # Render blueprint: the free 512 MB demo
 ├── environment.yml
-├── requirements.txt
+├── requirements.txt          # full project (notebooks)
+├── requirements-serve.lock   # hashed packages for the image
 └── LICENSE
 ```
 
