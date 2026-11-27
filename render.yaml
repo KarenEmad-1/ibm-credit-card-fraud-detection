@@ -3,8 +3,9 @@
 # this file to build and test the sample image.
 #
 # The full 2019 test year does not fit in 512 MB, so this builds the same Dockerfile
-# with the January 2019 sample bundle. Render passes envVars both to the Docker build
-# (as build args) and to the running container; CI's `sample` job reads this file and
+# with the sample bundle: January 2019 of the test year, plus January 2018 of the
+# validation year (FRAUD_SPLITS=test,val), where the validation-only MLP appears.
+# Render passes envVars both to the Docker build (as build args) and to the running container; CI's `sample` job reads this file and
 # does the same, so what it tests is what Render runs.
 services:
   - type: web
@@ -20,9 +21,11 @@ services:
     envVars:
       - key: PORT
         value: "10000"
+      - key: FRAUD_SPLITS
+        value: test,val
       - key: BUNDLE_NAME
-        value: fraud-ops-demo-sample-v1
+        value: fraud-ops-demo-sample-v2
       - key: BUNDLE_URL
-        value: https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/releases/download/demo-data-v1/fraud-ops-demo-sample-v1.tar.gz
+        value: https://github.com/KarenEmad-1/ibm-credit-card-fraud-detection/releases/download/demo-data-v2/fraud-ops-demo-sample-v2.tar.gz
       - key: BUNDLE_SHA256
-        value: a8ed4b1be2b66138c5d896d9c4ff1e24ea062e175601fd8fb83d8bb9207df2a9
+        value: 5e1de37aff68512f3e3e63860e266de604307a05a12c2362c9df5d32e942d13b
