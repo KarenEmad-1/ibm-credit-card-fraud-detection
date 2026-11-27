@@ -2,7 +2,7 @@
 //
 // GitHub Pages only serves files, so scripts/export_static_site.py saves the sample
 // bundle's columns and the results that need Python (PR curves, segments, SHAP) under
-// data/. This module answers the same requests as api/routers/*.py from those files,
+// data/<split>/ (test, and val when exported). This module answers the same requests as api/routers/*.py from those files,
 // so the screens do not know which backend they talk to. CI compares the two
 // (scripts/check_static_site.mjs).
 //
@@ -69,7 +69,8 @@ class ApiError extends Error {
   constructor(status, detail) { super(`${status}: ${detail}`); this.status = status; }
 }
 
-export function createBackend(load = fetchFile) {
+/** One split's backend: answers requests from the files in data/<split>/. */
+function createSplitBackend(load) {
   const cache = new Map();
   // A failed download is forgotten, so the next request tries again
   const once = (key, fn) => {
@@ -221,7 +222,7 @@ export function createBackend(load = fetchFile) {
     const p = Object.fromEntries(Object.entries(params).filter(([, v]) => v != null));
     const [a, b, d, ...more] = path.replace(/^\/api\//, "").split("/").map(decodeURIComponent);
     if (!more.length) {
-      if (["splits", "models", "curves", "drift", "ablations"].includes(a) && b === undefined) return (await meta())[a];
+      if (["models", "curves", "drift", "ablations"].includes(a) && b === undefined) return (await meta())[a];
       if (a === "threshold" && b) return threshold(b, p);
       if (a === "segments" && b) { const mm = await modelMeta(b); return (await meta()).segments[mm.key]; }
       if (a === "game" && b === "round") return gameRound(p);
@@ -313,4 +314,50 @@ export function createBackend(load = fetchFile) {
   }
 
   return { handle, openReplay, replayEvents };
+}
+
+/** The whole backend: /api/splits, and every other request routed by its `split`
+ *  parameter (default: the API's default split) to that split's backend. */
+export function createBackend(load = fetchFile) {
+  let splitsInfo = null;
+  const backends = new Map();
+  const splits = () => (splitsInfo ??= load("splits.json")
+    .then((b) => JSON.parse(new TextDecoder().decode(b)))
+    .catch((e) => { splitsInfo = null; throw e; }));
+  async function forSplit(params) {
+    const { split, ...rest } = params ?? {};
+    const info = await splits();
+    const name = split ?? info.default;
+    if (!info.splits.some((s) => s.split === name)) throw new ApiError(404, `split '${name}' not built`);
+    if (!backends.has(name)) backends.set(name, createSplitBackend((file) => load(`${name}/${file}`)));
+    return [backends.get(name), rest];
+  }
+  return {
+    async handle(path, params = {}) {
+      if (path.replace(/^\/api\//, "") === "splits") return splits();
+      const [b, rest] = await forSplit(params);
+      return b.handle(path, rest);
+    },
+    openReplay(params) {
+      // EventSource-like object returned synchronously, as by the split backend
+      let inner = null, closed = false;
+      const handlers = {};
+      const src = {
+        onerror: null,
+        addEventListener(event, fn) { handlers[event] = fn; inner?.addEventListener(event, fn); },
+        close() { closed = true; inner?.close(); },
+      };
+      forSplit(params).then(([b, rest]) => {
+        if (closed) return;
+        inner = b.openReplay(rest);
+        inner.onerror = (e) => src.onerror?.(e);
+        for (const [event, fn] of Object.entries(handlers)) inner.addEventListener(event, fn);
+      }).catch((e) => src.onerror?.(e));
+      return src;
+    },
+    async *replayEvents(params) {
+      const [b, rest] = await forSplit(params);
+      yield* b.replayEvents(rest);
+    },
+  };
 }

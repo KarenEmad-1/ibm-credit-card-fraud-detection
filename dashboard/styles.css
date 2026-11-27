@@ -17,11 +17,12 @@
   --ok: #3ddc84;            /* legit / cleared: always with ✓ */
   --ok-bg: rgba(61, 220, 132, .10);
   --info: #59c7f2;
-  /* model identity: categorical slots 1-4 (dark steps), fixed order */
+  /* model identity: categorical slots 1-5 (dark steps), fixed order; 5 = MLP (validation only) */
   --m1: #3987e5;
   --m2: #d95926;
   --m3: #199e70;
   --m4: #c98500;
+  --m5: #e24d8b;
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   --big: "VT323", "JetBrains Mono", monospace;
 }

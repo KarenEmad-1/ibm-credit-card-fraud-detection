@@ -4,9 +4,9 @@
 
 End-to-end fraud detection on **24.4 million** credit card transactions (IBM's synthetic dataset, 2,000 users, 1991–2020). The work starts with a careful EDA and a leakage-checked feature pipeline before any model is trained.
 
-> **Live demo:** https://karenemad-1.github.io/ibm-credit-card-fraud-detection/ (static, January 2019 sample, see [CI and deployment](#ci-and-deployment))
+> **Live demo:** https://karenemad-1.github.io/ibm-credit-card-fraud-detection/ (static: a January 2019 test sample and a January 2018 validation sample, see [CI and deployment](#ci-and-deployment))
 >
-> **Status:** complete. All four models were scored once on the 2019 test year (see [Results](#results-2019-test-year)).
+> **Status:** complete. All four models were scored once on the 2019 test year (see [Results](#results-2019-test-year)). A feed-forward network was added afterwards and is reported on validation only (see [MLP](#add-on-feed-forward-network-validation-only)).
 
 ## Key findings
 
@@ -39,6 +39,7 @@ End-to-end fraud detection on **24.4 million** credit card transactions (IBM's s
 6. ~~FT-Transformer (deep learning for tabular data), then tuning~~ ([`06_ft_transformer.ipynb`](notebooks/06_ft_transformer.ipynb))
 7. ~~Ablations: geographic shortcut, user-snapshot leakage, per-segment performance~~ ([`07_ablations.ipynb`](notebooks/07_ablations.ipynb))
 8. ~~Final evaluation of all models on the 2019 test year (once), with bootstrap confidence intervals and SHAP~~ ([`08_final_evaluation.ipynb`](notebooks/08_final_evaluation.ipynb))
+9. ~~Add-on: feed-forward network (MLP), validation only~~ ([`09_mlp.ipynb`](notebooks/09_mlp.ipynb))
 
 Every model uses the same split, the same metrics (PR-AUC, recall at fixed precision) and a decision threshold chosen on validation. The original reasoning behind the phases is in section 8 of the EDA notebook.
 
@@ -65,6 +66,26 @@ The test year (1.72M transactions, 2,087 frauds) was scored **once**, after ever
 
 Figures: [`test_pr_curves.png`](reports/figures/test_pr_curves.png), [`shap_share_heatmap.png`](reports/figures/shap_share_heatmap.png), [`shap_beeswarms.png`](reports/figures/shap_beeswarms.png). Tables: `reports/test_*.csv`, `reports/shap_importance_share.csv`.
 
+## Add-on: feed-forward network (validation only)
+
+A plain MLP was added after the test year was scored, to answer one question: does the FT-Transformer's architecture matter, or does any neural network land in the same place? **It is never scored on the 2019 test year**, because a second look at test after seeing the other results would turn test into a tuning set. Everything below is 2018 validation, compared with the other models' validation scores.
+
+It uses the same protocol as the other four: the same features and sampling, the FT-Transformer's preprocessing and training loop (only the network differs), tuning on A (120 Optuna trials in under 2 hours, every trial trained with the final fixed-epoch recipe and scored on its last epoch), 3 seeds averaged, then a frozen refit on B.
+
+| Model | Val PR-AUC (A) | Val PR-AUC (B) | B keeps |
+|---|---|---|---|
+| CatBoost | 0.864 | 0.480 | 56% |
+| Random Forest | 0.716 | 0.483 | 67% |
+| FT-Transformer | 0.533 | 0.424 | 80% |
+| **MLP** | **0.455** | **0.161** | **35%** |
+| Logistic regression | 0.152 | 0.020 | 13% |
+
+- **The MLP is fourth on both variants.** Tuning lifted it from 0.405 to 0.455 on A (2 blocks of 512 units). Its seeds score 0.463, 0.442 and 0.432.
+- **Without geography it falls much further than the FT-Transformer** (0.161 vs 0.424). With `is_international` available a plain network can lean on it. Without it, the remaining signal is likely in feature interactions, which the FT-Transformer's per-feature tokens and attention handle much better. So the FT-Transformer's architecture, not just "being a neural network", is what makes it competitive here. The comparison can't separate the tokens from the attention.
+- The ranking is unchanged: trees > FT-Transformer > MLP > logistic regression.
+
+The MLP appears in the dashboard's VAL-2018 view and never in the TEST view.
+
 ## Dashboard: FRAUD-OPS
 
 ![FRAUD-OPS SHORTCUT screen: CatBoost test PR-AUC 0.873 with geography, and every model's drop without it](reports/figures/dashboard_shortcut.png)
@@ -80,13 +101,13 @@ uvicorn api.main:app --port 8000                      # open http://localhost:80
 | Key | Screen | What it does |
 |---|---|---|
 | 1 | TAPE | Replays the year live (server-sent events): a transaction tape, an alert queue whose labels arrive after a delay, alerts per hour, and feature drift (PSI vs training) |
-| 2 | HUNT | Beat the model: judge 10 transactions as fraud or legit, with the card's recent history, then see all four models' verdicts and the SHAP reasons |
+| 2 | HUNT | Beat the model: judge 10 transactions as fraud or legit, with the card's recent history, then see every model's verdict and the SHAP reasons |
 | 3 | CASES | Card attack files: a timeline of one stolen card with risk score, time to detection and dollars lost before the first catch, plus SHAP for any point |
 | 4 | TRIAGE | One shift with a limited investigation budget: pick alerts, then compare your dollars recovered with ranking by score, by score × amount, and with hindsight |
 | 5 | SHORTCUT | Switches geography off and shows test PR-AUC fall from 0.873 to 0.481 (validation: 0.864 to 0.480): the project's main finding |
 | 6 | LAB | PR curves, model board, threshold simulator and per-segment metrics |
 
-`M` cycles the model, `T` switches between amber and green phosphor, and `?` opens help. API docs are at `/docs`.
+The LEDGER menu switches between the 2019 test year and the 2018 validation year. The validation view also has the ablation variants and the MLP, which has no test score. `M` cycles the model, `T` switches between amber and green phosphor, and `?` opens help. API docs are at `/docs`.
 
 ## Run it with Docker
 
@@ -117,9 +138,9 @@ The container holds about 1 GiB in memory. The data and models come from a [GitH
 4. **Sample:** builds the image that [`render.yaml`](render.yaml) describes and smoke-tests it under a hard 512 MB limit with no swap.
 5. **Static site:** exports the dashboard from that image and compares it with the running API, request by request ([`check_static_site.mjs`](scripts/check_static_site.mjs)). On `main`, the site is then published to GitHub Pages.
 
-**Live demo.** GitHub Pages runs no Python, so the live demo is a static copy of the dashboard. [`export_static_site.py`](scripts/export_static_site.py) saves the scores, segments and SHAP explanations through the API's own code, and [`static-backend.js`](dashboard/js/static-backend.js) does the rest in the browser: replay, threshold simulator, triage and card timelines. SHAP is precomputed for about 3,400 transactions, so the game draws from those. The FastAPI service itself runs from the Docker image above.
+**Live demo.** GitHub Pages runs no Python, so the live demo is a static copy of the dashboard. [`export_static_site.py`](scripts/export_static_site.py) saves the scores, segments and SHAP explanations through the API's own code, and [`static-backend.js`](dashboard/js/static-backend.js) does the rest in the browser: replay, threshold simulator, triage and card timelines. SHAP is precomputed for about 3,100–3,400 transactions per year, so the game draws from those. The FastAPI service itself runs from the Docker image above.
 
-**Sample mode.** The full test year does not fit in 512 MB or in a browser page, so the sample image and the live demo use a January 2019 bundle (146,097 transactions, 203 frauds). The headline metrics and PR curves there are still the full-year ones. Everything computed live, such as the threshold simulator and triage, uses the sample, and the dashboard shows a SAMPLE DATA banner.
+**Sample mode.** The full test year does not fit in 512 MB or in a browser page, so the sample image and the live demo use a sample bundle: January 2019 of the test year (146,097 transactions, 203 frauds) and January 2018 of the validation year (146,357 transactions, 145 frauds), where the MLP appears. The headline metrics and PR curves there are still the full-year ones. Everything computed live, such as the threshold simulator and triage, uses the sample, and the dashboard shows a SAMPLE DATA banner.
 
 ## Project structure
 
@@ -135,14 +156,16 @@ The container holds about 1 GiB in memory. The data and models come from a [GitH
 │   ├── 05_catboost.ipynb
 │   ├── 06_ft_transformer.ipynb
 │   ├── 07_ablations.ipynb            # geography, user snapshots, segments
-│   └── 08_final_evaluation.ipynb     # single test-year scoring, bootstrap CIs, SHAP
+│   ├── 08_final_evaluation.ipynb     # single test-year scoring, bootstrap CIs, SHAP
+│   └── 09_mlp.ipynb                  # add-on: feed-forward network, validation only
 ├── src/
 │   ├── data.py               # loading, cleaning, Parquet caching, checked user/card joins
 │   ├── features.py           # split definition, leakage-safe feature engineering, encoders
 │   ├── modeling.py           # sampling, preprocessing, shared model helpers
 │   ├── evaluation.py         # one metric protocol for every model (PR-AUC, recall@precision)
 │   ├── ft_transformer.py     # FT-Transformer written directly in PyTorch
-│   └── final_models.py       # frozen training recipes reused by notebooks 07-08
+│   ├── mlp.py                # MLP trained with the FT-Transformer's loop
+│   └── final_models.py       # frozen training recipes reused by notebooks 07-09
 ├── reports/
 │   ├── figures/              # PR curves, SHAP plots, EDA figures
 │   ├── best_params_*.json    # tuned hyperparameters

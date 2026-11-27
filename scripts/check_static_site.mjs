@@ -69,67 +69,86 @@ async function streamEvents(params, until) {
   return events;
 }
 
-// 1. Saved responses
-for (const path of ["/api/splits", "/api/models", "/api/curves", "/api/drift", "/api/ablations"]) await same(path);
-const { models } = await api("/api/models");
-const days = (await same("/api/triage/days", { n: 14, seed: 7 })).days;
+await same("/api/splits");
+const splitList = (await api("/api/splits")).splits.map((x) => x.split);
+const explainedBySplit = {};
+const seen = { fraud: 0, legit: 0 };
+const addDays = (iso, d) => new Date(Date.parse(`${iso}T00:00:00Z`) + d * 86400e3).toISOString().slice(0, 19);
 
-// 2. Computed in the browser, for every model
-const keys = models.map((m) => m.key);
-let cards = [];
-for (const model of keys) {
-  const e = encodeURIComponent(model);
-  await same(`/api/segments/${e}`);
-  await same(`/api/threshold/${e}`);
-  for (const t of [0, 0.001, 0.1, 0.5, 0.9, 1]) await same(`/api/threshold/${e}`, { t });
-  cards = (await same("/api/cards/attacks", { model, limit: 40 })).cards;
-  for (const date of days) {
-    await same("/api/triage", { date, model, k: 24 });
-    await same("/api/triage/reveal", { date, model, k: 24 });
+for (const split of splitList) {
+  const sp = (params = {}) => ({ ...params, split });
+
+  // 1. Saved responses
+  for (const path of ["/api/models", "/api/curves", "/api/drift", "/api/ablations"]) await same(path, sp());
+  const meta = await api("/api/models", sp());
+  const { models } = meta;
+  const days = (await same("/api/triage/days", sp({ n: 14, seed: 7 }))).days;
+
+  // 2. Computed in the browser, for every model
+  const keys = models.map((m) => m.key);
+  let cards = [];
+  for (const model of keys) {
+    const e = encodeURIComponent(model);
+    await same(`/api/segments/${e}`, sp());
+    await same(`/api/threshold/${e}`, sp());
+    for (const t of [0, 0.001, 0.1, 0.5, 0.9, 1]) await same(`/api/threshold/${e}`, sp({ t }));
+    cards = (await same("/api/cards/attacks", sp({ model, limit: 40 }))).cards;
+    for (const date of days) {
+      await same("/api/triage", sp({ date, model, k: 24 }));
+      await same("/api/triage/reveal", sp({ date, model, k: 24 }));
+    }
+  }
+  const explained = new Set();
+  for (const [i, c] of cards.entries()) {
+    const tl = await same(`/api/cards/${c.user}/${c.card}`, sp({ model: keys[i % keys.length] }));
+    for (const r of [tl.rows[0], tl.rows[tl.rows.length - 1], tl.rows.find((x) => x.is_fraud)]) explained.add(r.txn_id);
+  }
+
+  // 3. Game: the draw differs by design, so check that every drawn round is valid and reveals the same
+  for (let seed = 0; seed < 60; seed++) {
+    const model = keys[seed % keys.length];
+    const round = await backend.handle("/api/game/round", sp({ seed, model }));
+    const reveal = await same(`/api/game/reveal/${round.round}`, sp());
+    seen[reveal.is_fraud ? "fraud" : "legit"]++;
+    const { transaction } = await api(`/api/transactions/${round.round}`, sp());
+    for (const f of ["amount", "merchant", "city", "user", "card"]) record(`${split} round ${seed} ${f}`, diff(transaction[f], round.transaction[f]));
+    explained.add(round.round);
+  }
+
+  // 4. SHAP, including that it reproduces the saved score
+  for (const id of explained) await same(`/api/explain/${encodeURIComponent(meta.explainable[0])}/${id}`, sp());
+  explainedBySplit[split] = explained.size;
+
+  // 5. Replay: the same events in the same order
+  const start = meta.sample.start;
+  for (const [model, speed, offset, n] of [["CatBoost A", 4320, 0, 12], ["LogReg B", 1440, 9 + 6.5 / 24, 8],
+    ["CatBoost B", 30, 2.5, 6], ["CatBoost A", 4320, 27, 1e9]]) {
+    const params = sp({ model, speed, start: addDays(start, offset) });
+    const a = await streamEvents(params, (ev) => ev.length >= n || ev.at(-1)?.[0] === "end");
+    const b = [];
+    for await (const ev of backend.replayEvents(params)) { b.push(JSON.parse(JSON.stringify(ev))); if (b.length >= a.length) break; }
+    record(`replay ${JSON.stringify(params)} `, a.length < 2 ? "too few events" : diff(a, b));
+    if (n === 1e9) record(`${split} replay end `, a.at(-1)[0] === "end" ? null : "no end event");
+  }
+
+  // 6. Independent of the API comparison: the headline number, and the MLP only on validation
+  const served = (await backend.handle("/api/models", sp())).models;
+  const hasMlp = served.some((m) => m.key.startsWith("MLP "));
+  if (split === "test") {
+    const cb = served.find((m) => m.key === "CatBoost B");
+    record("CatBoost B PR-AUC ", cb.metrics.pr_auc.toFixed(4) === "0.4808" ? null : String(cb.metrics.pr_auc));
+    record("test split has no MLP ", hasMlp ? ": the MLP is validation only" : null);
+  } else if (split === "val") {
+    record("val split has MLP A and B ", ["MLP A", "MLP B"].every((k) => served.some((m) => m.key === k)) ? null : ": missing");
   }
 }
-const explained = new Set();
-for (const [i, c] of cards.entries()) {
-  const tl = await same(`/api/cards/${c.user}/${c.card}`, { model: keys[i % keys.length] });
-  for (const r of [tl.rows[0], tl.rows[tl.rows.length - 1], tl.rows.find((x) => x.is_fraud)]) explained.add(r.txn_id);
-}
-
-// 3. Game: the draw differs by design, so check that every drawn round is valid and reveals the same
-const seen = { fraud: 0, legit: 0 };
-for (let seed = 0; seed < 60; seed++) {
-  const model = keys[seed % keys.length];
-  const round = await backend.handle("/api/game/round", { seed, model });
-  const reveal = await same(`/api/game/reveal/${round.round}`);
-  seen[reveal.is_fraud ? "fraud" : "legit"]++;
-  const { transaction } = await api(`/api/transactions/${round.round}`);
-  for (const f of ["amount", "merchant", "city", "user", "card"]) record(`round ${seed} ${f}`, diff(transaction[f], round.transaction[f]));
-  explained.add(round.round);
-}
 record("game mix", seen.fraud && seen.legit ? null : `: ${JSON.stringify(seen)}`);
-
-// 4. SHAP, including that it reproduces the saved score
-const { explainable } = await api("/api/models");
-for (const id of explained) await same(`/api/explain/${encodeURIComponent(explainable[0])}/${id}`);
-
-// 5. Replay: the same events in the same order
-for (const [model, speed, start, n] of [["CatBoost A", 4320, "2019-01-01T00:00:00", 12], ["LogReg B", 1440, "2019-01-10T06:30:00", 8],
-  ["CatBoost B", 30, "2019-01-03T12:00:00", 6], ["CatBoost A", 4320, "2019-01-28T00:00:00", 1e9]]) {
-  const params = { model, speed, start };
-  const a = await streamEvents(params, (ev) => ev.length >= n || ev.at(-1)?.[0] === "end");
-  const b = [];
-  for await (const ev of backend.replayEvents(params)) { b.push(JSON.parse(JSON.stringify(ev))); if (b.length >= a.length) break; }
-  record(`replay ${JSON.stringify(params)} `, a.length < 2 ? "too few events" : diff(a, b));
-  if (n === 1e9) record("replay end ", a.at(-1)[0] === "end" ? null : "no end event");
-}
-
-// 6. Headline number, independent of the API comparison
-const cb = (await backend.handle("/api/models")).models.find((m) => m.key === "CatBoost B");
-record("CatBoost B PR-AUC ", cb.metrics.pr_auc.toFixed(4) === "0.4808" ? null : String(cb.metrics.pr_auc));
+const explainedTotal = Object.values(explainedBySplit).reduce((x, y) => x + y, 0);
 
 if (failures.length) {
   console.error(`${failures.length} of ${checks} checks failed:`);
   for (const f of failures.slice(0, 20)) console.error(`  ${f}`);
   process.exit(1);
 }
-console.log(`static site matches the API: ${checks} checks (${explained.size} SHAP explanations, game ${JSON.stringify(seen)})`);
+console.log(`static site matches the API: ${checks} checks over ${splitList.join(" + ")} (${explainedTotal} SHAP explanations ${JSON.stringify(explainedBySplit)}, game ${JSON.stringify(seen)})`);
 process.exit(0);

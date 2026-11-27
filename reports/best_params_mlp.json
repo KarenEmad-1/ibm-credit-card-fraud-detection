@@ -1,0 +1,32 @@
+{
+  "mlp": {
+    "params": {
+      "neg_per_pos": 100,
+      "d_embedding": 32,
+      "d_hidden": 512,
+      "n_blocks": 2,
+      "dropout": 0.14879084770993906,
+      "lr": 0.0016966386436898567,
+      "weight_decay": 0.0001681743795480901,
+      "batch_size": 1024,
+      "epochs": 20,
+      "schedule": "cosine",
+      "warmup_epochs": 1,
+      "ema_decay": 0.9995,
+      "select_best": false
+    },
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "start_year": 2010,
+    "val_pr_auc_per_seed": {
+      "0": 0.4629,
+      "1": 0.4419,
+      "2": 0.4319
+    },
+    "val_threshold": 0.6184518337249756,
+    "note": "validation only: added after the 2019 test year was scored, never scored on test"
+  }
+}

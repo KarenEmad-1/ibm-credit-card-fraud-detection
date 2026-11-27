@@ -199,8 +199,8 @@ def _lr_at(step, total_steps, warmup_steps, base_lr, schedule):
 def fit_ft(train_tensors, n_num, cardinalities, val_tensors=None, *, epochs=30, patience=4,
            batch_size=1024, lr=1e-4, weight_decay=1e-5, pos_weight=1.0, seed=0, verbose=True,
            max_minutes=None, on_epoch=None, checkpoint=None,
-           schedule=None, warmup_epochs=1, ema_decay=None, select_best=True, **model_params):
-    """Train an FT-Transformer.
+           schedule=None, warmup_epochs=1, ema_decay=None, select_best=True, model_fn=None, **model_params):
+    """Train an FT-Transformer (or, with `model_fn`, any model called as model(x_num, x_cat)).
 
     With `val_tensors` (x_num, x_cat, y) and `select_best=True` it early-stops on
     validation PR-AUC and returns the best epoch's weights. Without `val_tensors`,
@@ -221,15 +221,19 @@ def fit_ft(train_tensors, n_num, cardinalities, val_tensors=None, *, epochs=30, 
     cut. If it holds a finished run, the trained model is returned without training.
     The caller must use a different path for each configuration.
 
+    `model_fn(n_num, cardinalities, **model_params)` builds the network; the default
+    is `FTTransformer`. `src/mlp.py` uses it to train an MLP with the same loop.
+
     Returns (model, history), history = list of per-epoch dicts.
     """
     torch.manual_seed(seed)
     x_num, x_cat, y = train_tensors
-    model = FTTransformer(n_num, cardinalities, **model_params).cuda()
-    # Paper: no weight decay on the tokenizer, norms and biases
+    model_fn = model_fn or FTTransformer
+    model = model_fn(n_num, cardinalities, **model_params).cuda()
+    # Paper: no weight decay on the tokenizer / embeddings, norms and biases
     decay, no_decay = [], []
     for name, p in model.named_parameters():
-        (no_decay if ("tokenizer" in name or "norm" in name or name.endswith("bias") or name == "cls") else decay).append(p)
+        (no_decay if ("tokenizer" in name or "embedding" in name or "norm" in name or name.endswith("bias") or name == "cls") else decay).append(p)
     opt = torch.optim.AdamW([{"params": decay, "weight_decay": weight_decay},
                              {"params": no_decay, "weight_decay": 0.0}], lr=lr)
     pw = torch.tensor(pos_weight, device="cuda")
@@ -239,7 +243,7 @@ def fit_ft(train_tensors, n_num, cardinalities, val_tensors=None, *, epochs=30, 
     total_steps, warmup_steps = epochs * steps_per_epoch, warmup_epochs * steps_per_epoch
     ema = None
     if ema_decay is not None:
-        ema = FTTransformer(n_num, cardinalities, **model_params).cuda()
+        ema = model_fn(n_num, cardinalities, **model_params).cuda()
         ema.load_state_dict(model.state_dict())
         ema.requires_grad_(False)
     eval_model = ema if ema is not None else model

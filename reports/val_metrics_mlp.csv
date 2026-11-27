@@ -1,0 +1,4 @@
+,pr_auc,roc_auc,recall@precision0.5,precision@top0.1%,recall@top0.1%,threshold,precision@threshold,recall@threshold,alerts@threshold
+MLP (baseline),0.4045,0.98,0.3978,0.5389,0.3725,0.5718,0.5088,0.395,1934.0
+MLP (tuned),0.4554,0.9833,0.4408,0.5796,0.4006,0.6185,0.5784,0.4026,1734.0
+MLP B,0.1614,0.9139,0.1072,0.27,0.1867,0.4588,0.2837,0.1819,1597.0

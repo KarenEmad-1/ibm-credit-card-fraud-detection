@@ -37,7 +37,7 @@ export function Lab() {
           })}</tbody>
         </table>
         <div class="prose" style="padding:10px">
-          <p>PR-AUC is the headline because fraud is ${curves ? fmtPct(curves.base_rate, 2) : "—"} of traffic. At that rate ROC-AUC is above 0.98 for ${highRoc === meta.models.length ? "every model" : `${highRoc} of the ${meta.models.length} models`} and barely tells them apart. FT-Transformer's ${fmt3(meta.models.find((m) => m.key.startsWith("FT"))?.metrics.pr_auc)} is the 3-seed average after stabilising, with no picking of the best epoch on validation.</p>
+          <p>PR-AUC is the headline because fraud is ${curves ? fmtPct(curves.base_rate, 2) : "—"} of traffic. At that rate ROC-AUC is above 0.98 for ${highRoc === meta.models.length ? "every model" : `${highRoc} of the ${meta.models.length} models`} and barely tells them apart. FT-Transformer's ${fmt3(meta.models.find((m) => m.key.startsWith("FT"))?.metrics.pr_auc)} is the 3-seed average after stabilising, with no picking of the best epoch on validation.${meta.models.some((m) => m.key.startsWith("MLP ")) ? html` The MLP (<b>${fmt3(meta.models.find((m) => m.key === "MLP A")?.metrics.pr_auc)}</b> on A, <b>${fmt3(meta.models.find((m) => m.key === "MLP B")?.metrics.pr_auc)}</b> on B) is validation only: it was added after the test year was scored, so it never appears in the TEST view.` : ""}</p>
         </div>
       </${Pane}>
     </div>

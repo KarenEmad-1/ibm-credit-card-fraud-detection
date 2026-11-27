@@ -8,7 +8,9 @@ scores, joins them to the transaction details the dashboard displays, and
 precomputes the heavy parts (PR curves, metrics, daily drift):
 
 - val  : the tuned models' 2018 scores from notebooks 04-06 (variant A), plus the
-         variant B-D scores from notebook 07 once `val_scores_ablation.parquet` exists.
+         variant B-D scores from notebook 07 once `val_scores_ablation.parquet` exists,
+         plus the MLP's A and B scores from notebook 09 (validation only: the MLP was
+         added after the test year was scored, so it never appears in the test split).
 - test : `test_scores_final.parquet`, written once by notebook 08. The 2019 test year
          is never read before that file exists, so the dashboard cannot peek at test.
 
@@ -37,7 +39,7 @@ from src.evaluation import evaluate, best_f1_threshold           # noqa: E402
 REPORTS = PROJECT_ROOT / "reports"
 OUT_ROOT = CACHE_DIR / "dashboard"
 YEARS = {"val": 2018, "test": 2019}
-MODEL_ORDER = ["LogReg", "RandomForest", "CatBoost", "FT-Transformer"]
+MODEL_ORDER = ["LogReg", "RandomForest", "CatBoost", "FT-Transformer", "MLP"]
 
 # Columns shown in the transaction tables and used for segments.
 FEATURE_COLS = ["amount", "is_online", "is_international", "is_new_merchant_for_card",
@@ -84,6 +86,7 @@ def gather_scores(split: str) -> tuple[pd.DataFrame, dict[str, float | None]]:
         ("val_scores_traditional.parquet", "val_metrics_traditional.csv", ["LogReg", "RandomForest"]),
         ("val_scores_catboost.parquet", "val_metrics_catboost.csv", ["CatBoost"]),
         ("val_scores_ft_transformer.parquet", "val_metrics_ft_transformer.csv", ["FT-Transformer"]),
+        ("val_scores_mlp.parquet", "val_metrics_mlp.csv", ["MLP"]),
     ]:
         if not (CACHE_DIR / file).exists():
             log(f"  skip {file}: not found")
@@ -91,6 +94,11 @@ def gather_scores(split: str) -> tuple[pd.DataFrame, dict[str, float | None]]:
         df = pd.read_parquet(CACHE_DIR / file)
         metrics = pd.read_csv(REPORTS / metrics_file, index_col=0)
         for n in names:
+            if n == "MLP":                                     # notebook 09 saves "MLP A" / "MLP B"
+                for v in ("A", "B"):
+                    cols[f"MLP {v}"] = df[f"MLP {v}"]
+                    thresholds[f"MLP {v}"] = float(metrics.loc["MLP (tuned)" if v == "A" else "MLP B", "threshold"])
+                continue
             cols[f"{n} A"] = df[f"{n} (tuned)"]
             thresholds[f"{n} A"] = float(metrics.loc[f"{n} (tuned)", "threshold"])
 

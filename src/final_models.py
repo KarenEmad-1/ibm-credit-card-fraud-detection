@@ -1,8 +1,9 @@
-"""Frozen final recipes for the four models.
+"""Frozen final recipes for the five models.
 
 The ablations (notebook 07) and the single test evaluation (notebook 08) must train
 and score each model exactly as notebooks 04-06 did, only on a different feature
-list. These functions do that. Hyperparameters are read from
+list. These functions do that. The MLP (notebook 09) was added after the test year
+was scored, so it is fitted and scored on validation only. Hyperparameters are read from
 `reports/best_params_*.json` and nothing here is tuned.
 
 Each `fit_*` returns a "bundle" dict that `score(bundle, df)` turns into fraud
@@ -24,18 +25,24 @@ from src.modeling import (TARGET, undersample, linear_preprocessor, tree_matrix,
 SEED = 0
 REPORTS_DIR = PROJECT_ROOT / "reports"
 FINAL_DIR = PROJECT_ROOT / "models" / "final"
+# The four models of notebooks 04-08, the only ones ever scored on the 2019 test year.
+# Notebooks 07 and 08 loop over this list, so the MLP must never be added to it.
 MODEL_NAMES = ["LogReg", "RandomForest", "CatBoost", "FT-Transformer"]
+VAL_ONLY_MODELS = ["MLP"]            # notebook 09: added after the test year was scored
 
 
 def load_params() -> dict:
     trad = json.loads((REPORTS_DIR / "best_params_traditional.json").read_text())
     cb = json.loads((REPORTS_DIR / "best_params_catboost.json").read_text())["catboost"]
     ft = json.loads((REPORTS_DIR / "best_params_ft_transformer.json").read_text())["ft_transformer"]
+    mlp_path = REPORTS_DIR / "best_params_mlp.json"
+    mlp = json.loads(mlp_path.read_text())["mlp"] if mlp_path.exists() else None
     return {
         "LogReg": trad["logreg"]["params"],
         "RandomForest": trad["random_forest"]["params"],
         "CatBoost": cb["params"],
         "FT-Transformer": {**ft["params"], "seeds": ft["seeds"], "start_year": ft["start_year"]},
+        **({"MLP": {**mlp["params"], "seeds": mlp["seeds"], "start_year": mlp["start_year"]}} if mlp else {}),
     }
 
 
@@ -79,11 +86,17 @@ def fit_catboost(train, features, p):
     return {"kind": "CatBoost", "features": features, "model": model}
 
 
-def fit_ft_transformer(train, features, p, ckpt_dir, tag, val=None, verbose=True):
-    """3-seed stabilised FT-Transformer (notebook 06's final recipe). `val`, if given,
+def fit_ft_transformer(train, features, p, ckpt_dir, tag, val=None, verbose=True, kind="FT-Transformer"):
+    """3-seed stabilised FT-Transformer (notebook 06's final recipe), or with
+    kind="MLP" the MLP of notebook 09 trained the same way. `val`, if given,
     is only recorded per epoch (select_best=False), never used to pick anything."""
     import torch
     from src.ft_transformer import TabularPreprocessor, to_device, fit_ft, checkpoint_name, MODEL_KEYS
+    from src.mlp import MLP, MLP_KEYS
+    if kind == "MLP":
+        MODEL_KEYS, model_fn = MLP_KEYS, MLP
+    else:
+        model_fn = None
     s = _sample(train, p)
     pre = TabularPreprocessor(features, seed=SEED).fit(s)
     tr = to_device(*pre.transform(s), s[TARGET])
@@ -95,7 +108,7 @@ def fit_ft_transformer(train, features, p, ckpt_dir, tag, val=None, verbose=True
     for seed in p["seeds"]:
         cfg = {**kw, "neg_per_pos": p["neg_per_pos"], "start_year": p["start_year"],
                "features": sorted(features), "seed": seed}
-        m, h = fit_ft(tr, pre.n_num, pre.cardinalities, va, seed=seed, verbose=verbose,
+        m, h = fit_ft(tr, pre.n_num, pre.cardinalities, va, seed=seed, verbose=verbose, model_fn=model_fn,
                       checkpoint=Path(ckpt_dir) / checkpoint_name(tag, cfg), **kw)
         states.append({k: v.detach().cpu() for k, v in m.state_dict().items()})
         histories.append(h)
@@ -103,7 +116,7 @@ def fit_ft_transformer(train, features, p, ckpt_dir, tag, val=None, verbose=True
     del tr, va
     torch.cuda.empty_cache()
     model_params = {k: p[k] for k in MODEL_KEYS if k in p}
-    return {"kind": "FT-Transformer", "features": features, "preprocessor": pre,
+    return {"kind": kind, "features": features, "preprocessor": pre,
             "state_dicts": states, "model_params": model_params, "histories": histories}
 
 
@@ -117,6 +130,8 @@ def fit(name, train, features, params, **kw):
         return fit_catboost(train, features, p)
     if name == "FT-Transformer":
         return fit_ft_transformer(train, features, p, **kw)
+    if name == "MLP":
+        return fit_ft_transformer(train, features, p, kind="MLP", **kw)
     raise ValueError(name)
 
 
@@ -131,14 +146,16 @@ def score(bundle, df: pd.DataFrame) -> np.ndarray:
         from catboost import Pool
         return bundle["model"].predict_proba(Pool(catboost_frame(df, features),
                                                   cat_features=categorical_in(features)))[:, 1]
-    if kind == "FT-Transformer":
+    if kind in ("FT-Transformer", "MLP"):
         import torch
         from src.ft_transformer import FTTransformer, to_device, predict
+        from src.mlp import MLP
+        net = MLP if kind == "MLP" else FTTransformer
         pre = bundle["preprocessor"]
         x_num, x_cat = to_device(*pre.transform(df))
         out = []
         for sd in bundle["state_dicts"]:
-            m = FTTransformer(pre.n_num, pre.cardinalities, **bundle["model_params"]).cuda()
+            m = net(pre.n_num, pre.cardinalities, **bundle["model_params"]).cuda()
             m.load_state_dict(sd)
             out.append(predict(m, x_num, x_cat))
             del m
@@ -167,7 +184,7 @@ def load_bundle(name, variant):
 
 
 def load_variant_a(name: str, features: list[str]):
-    """Variant A = the tuned models already saved by notebooks 04-06."""
+    """Variant A = the tuned models already saved by notebooks 04-06 and 09."""
     import torch
     models = PROJECT_ROOT / "models"
     if name == "LogReg":
@@ -185,4 +202,9 @@ def load_variant_a(name: str, features: list[str]):
         b = torch.load(models / "ft_transformer_tuned.pt", map_location="cpu", weights_only=False)
         return {"kind": name, "features": b["preprocessor"].features, "preprocessor": b["preprocessor"],
                 "state_dicts": b["state_dicts"], "model_params": {k: b["params"][k] for k in MODEL_KEYS if k in b["params"]}}
+    if name == "MLP":
+        from src.mlp import MLP_KEYS
+        b = torch.load(models / "mlp_tuned.pt", map_location="cpu", weights_only=False)
+        return {"kind": name, "features": b["preprocessor"].features, "preprocessor": b["preprocessor"],
+                "state_dicts": b["state_dicts"], "model_params": {k: b["params"][k] for k in MLP_KEYS if k in b["params"]}}
     raise ValueError(name)

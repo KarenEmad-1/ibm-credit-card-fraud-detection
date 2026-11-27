@@ -30,7 +30,9 @@ export function Shortcut() {
   const pr = (fam, v) => (isTest ? metaPr(fam, v) ?? valPr(fam, v) : valPr(fam, v) ?? metaPr(fam, v));
   const a = pr("CatBoost", "A"), b = pr("CatBoost", "B"), c = valPr("CatBoost", "C");
   const intl = seg?.find((x) => x.level === "International"), dom = seg?.find((x) => x.level === "Domestic in-store");
-  const fams = ["LogReg", "RandomForest", "CatBoost", "FT-Transformer"];
+  // The MLP has validation scores only (notebook 09), so it appears on the VAL view only
+  const fams = ["LogReg", "RandomForest", "CatBoost", "FT-Transformer", "MLP"]
+    .filter((f) => f !== "MLP" || meta.models.some((m) => m.key.startsWith("MLP ")));
 
   return html`<div class="stack">
     <div class="reveal">

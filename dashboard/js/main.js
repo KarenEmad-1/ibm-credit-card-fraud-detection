@@ -18,7 +18,7 @@ const SCREENS = [
   { id: "shortcut", key: "5", label: "SHORTCUT", title: "The shortcut", Comp: Shortcut,
     brief: "The best model scores 0.87 on the 2019 test year. Hide merchant geography and see what's left. This is the project's main finding." },
   { id: "lab", key: "6", label: "LAB", title: "Model lab", Comp: Lab,
-    brief: "The evidence behind the screens: PR curves, a threshold simulator and per-segment performance for all four models." },
+    brief: "The evidence behind the screens: PR curves, a threshold simulator and per-segment performance for every model." },
 ];
 
 const BOOT_LINES = (m) => [
@@ -27,7 +27,8 @@ const BOOT_LINES = (m) => [
   ["labelled fraud", `${fmtInt(m.n_frauds)} (1 in ${fmtInt(m.n_transactions / m.n_frauds)})`],
   ...m.models.map((x) => [`model ${shortModel(x.key)}`, `PR-AUC ${x.metrics.pr_auc.toFixed(3)}`]),
   ["decision thresholds", "LOCKED · chosen on validation"],
-  ["2019 test ledger", m.split === "test" ? "OPEN · scored once" : "SEALED until notebook 08"],
+  ["2019 test ledger", m.split === "test" ? "OPEN · scored once" : "scored once · see TEST view"],
+  ...(m.models.some((x) => x.key.startsWith("MLP")) ? [["MLP", "VALIDATION ONLY · added after test"]] : []),
   ["", "READY"],
 ];
 
@@ -57,7 +58,7 @@ function Help({ onClose }) {
     <div class="help" onClick=${(e) => e.stopPropagation()}>
       <div class="pane-h"><span class="pane-t">HELP · ABOUT THIS CONSOLE</span><span class="pane-r">[ESC] close</span></div>
       <div class="help-b">
-        <p><b>What this is.</b> Fraud detection on 24.4M synthetic card transactions (IBM, 1991–2020). The models are logistic regression, random forest, CatBoost and an FT-Transformer, trained on 1991–2017 and validated on 2018. 2019 is a test year scored exactly once.</p>
+        <p><b>What this is.</b> Fraud detection on 24.4M synthetic card transactions (IBM, 1991–2020). The models are logistic regression, random forest, CatBoost and an FT-Transformer, trained on 1991–2017 and validated on 2018. 2019 is a test year scored exactly once. A feed-forward network (MLP) was added after that and is shown in the VAL-2018 view only: it is never scored on test.</p>
         <p><b>Rules the project follows.</b> The split is chronological, per-card features use only past transactions, no feature uses fraud labels, thresholds are chosen on validation, and the test year is sealed until the end.</p>
         <p><b>Main finding.</b> Most of the score comes from merchant geography. In this synthetic data, foreign in-store transactions are 94% of 2018 validation fraud and all 2019 test fraud. See [5] SHORTCUT.</p>
         <table class="keys">
@@ -158,7 +159,7 @@ build data with: python scripts/build_dashboard_data.py --split val</pre></div>`
       </header>
 
       ${meta.sample ? html`<div class="sample-banner" role="note"><b>▲ SAMPLE DATA</b> ${meta.sample.start} → ${meta.sample.end}:${" "}
-        ${fmtInt(meta.n_transactions)} of ${fmtInt(meta.full_year.n_transactions)} test-year transactions (${fmtInt(meta.n_frauds)} of ${fmtInt(meta.full_year.n_frauds)} frauds).
+        ${fmtInt(meta.n_transactions)} of ${fmtInt(meta.full_year.n_transactions)} ${meta.split === "test" ? "test-year" : "validation-year"} transactions (${fmtInt(meta.n_frauds)} of ${fmtInt(meta.full_year.n_frauds)} frauds).
         ${" "}Full-year results: PR-AUC, PR and threshold curves, model board, SHORTCUT. Sample only: replay, threshold simulator figures, segments, game, cases and triage.
         ${STATIC ? " Static demo, no server: scores, segments and SHAP were computed in advance, the rest runs in your browser." : ""}</div>` : null}
       <div class="brief"><span class="brief-t">${cur.key} · ${upper(cur.title)}</span><span class="brief-x">${cur.brief}</span></div>

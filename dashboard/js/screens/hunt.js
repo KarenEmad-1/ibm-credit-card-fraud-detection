@@ -93,7 +93,7 @@ export function Hunt() {
       </${Pane}>
 
       <${Pane} title="MODEL VERDICTS" right=${rev ? "the tick is each model's threshold" : "hidden until you decide"}>
-        ${!rev ? html`<div class="muted">Commit to FRAUD or LEGIT to see what the four models said.</div>` : html`
+        ${!rev ? html`<div class="muted">Commit to FRAUD or LEGIT to see what the models said.</div>` : html`
           <table class="tbl"><tbody>${rev.scores.map((s) => html`<tr>
             <td><span style=${`color:${modelColor(s.model)}`}>■</span> ${shortModel(s.model)}</td>
             <td><${ScoreBar} score=${s.score} thr=${s.threshold} width=${16} /></td>

@@ -23,7 +23,7 @@ export async function openReplay(params) {
 }
 
 export async function api(path, params = {}, split = null) {
-  if (backend) return (await backend).handle(path, params);
+  if (backend) return (await backend).handle(path, { ...params, split });
   const q = new URLSearchParams(Object.fromEntries(Object.entries({ ...params, split }).filter(([, v]) => v != null)));
   const r = await fetch(`${path}?${q}`);
   if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
@@ -73,7 +73,7 @@ export const mccName = (m) => MCC[m] || "merchant";
 
 // ------------------------------------------------------------------ colors
 // Model identity uses the categorical slots in fixed order; never by rank.
-const FAMILY_VAR = { "LogReg": "--m1", "RandomForest": "--m2", "CatBoost": "--m3", "FT-Transformer": "--m4" };
+const FAMILY_VAR = { "LogReg": "--m1", "RandomForest": "--m2", "CatBoost": "--m3", "FT-Transformer": "--m4", "MLP": "--m5" };
 export const familyOf = (k) => k.split(" ").slice(0, -1).join(" ");
 export const variantOf = (k) => k.split(" ").slice(-1)[0];
 export const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();

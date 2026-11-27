@@ -4,10 +4,14 @@ GitHub Pages serves files and runs no Python, so this writes what
 dashboard/js/static-backend.js needs to answer the dashboard's requests in the browser:
 
     index.html, js/, styles.css, vendor/   the dashboard, marked as static
-    data/static.json       results that need Python: metrics, curves, segments, attack lists
-    data/core.bin.gz       transaction columns, little-endian arrays
-    data/score-<i>.bin.gz  one float32 score column per model, loaded when needed
-    data/shap/<n>.json     SHAP explanations for a chosen set of transactions
+    data/splits.json               the splits served (the TEST/VAL switch), as /api/splits
+    data/<split>/static.json       results that need Python: metrics, curves, segments, attack lists
+    data/<split>/core.bin.gz       transaction columns, little-endian arrays
+    data/<split>/score-<i>.bin.gz  one float32 score column per model, loaded when needed
+    data/<split>/shap/<n>.json     SHAP explanations for a chosen set of transactions
+
+<split> is every split the API has loaded (FRAUD_SPLITS): test, and val when the sample
+bundle has it.
 
 Everything is read through the API's own store and endpoint functions, so the site shows
 what the API shows. Nothing is trained and no split is re-scored. Runs on a sample bundle
@@ -90,36 +94,11 @@ def game_pools(d) -> dict:
                                        GAME_FALSE_ALERTS) for k in d.model_keys}}
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("out", type=Path)
-    args = ap.parse_args()
-    out: Path = args.out
-    if out.exists() and any(out.iterdir()):
-        raise SystemExit(f"{out} is not empty")
-
-    store.load()
-    d = store.get(None)
-    if "sample" not in d.meta:
-        raise SystemExit("the static site needs a sample bundle; this is the full one")
-
-    # 1. The dashboard
-    out.mkdir(parents=True, exist_ok=True)
-    for name in PAGE_FILES:
-        src = FRONTEND / name
-        if src.is_dir():
-            shutil.copytree(src, out / name)
-        elif src.exists():
-            shutil.copy(src, out / name)
-    page = out / "index.html"
-    html = page.read_text(encoding="utf-8")
-    if html.count("</head>") != 1:
-        raise SystemExit("index.html: expected one </head>")
-    page.write_text(html.replace("</head>", META_TAG + "</head>"), encoding="utf-8", newline="\n")
-
-    # 2. Transaction and score columns
-    data = out / "data"
+def export_split(d, data: Path) -> int:
+    """Write one split's files into `data`; return how many transactions have SHAP."""
+    split = d.split
     (data / "shap").mkdir(parents=True)
+    # 2. Transaction and score columns
     columns, dictionaries, blob = core_columns(d)
     write_gz(data / "core.bin.gz", blob)
     for i, key in enumerate(d.model_keys):
@@ -127,13 +106,13 @@ def main() -> None:
 
     # 3. SHAP for every transaction the CASES and HUNT screens can ask about
     shap_model = d.explainable()[0]
-    attacks = {k: play.card_attacks(None, k, ATTACK_CARDS) for k in d.model_keys}
+    attacks = {k: play.card_attacks(split, k, ATTACK_CARDS) for k in d.model_keys}
     ids = d.tx["txn_id"].to_numpy()
     pools = game_pools(d)
     cards = {(c["user"], c["card"]) for r in attacks.values() for c in r["cards"]}
     wanted = set(pools["fraud"]) | set(pools["legit"]) | {t for p in pools["false_alerts"].values() for t in p}
     for user, card in cards:
-        wanted |= set(ids[play._card_rows(d.split, user, card)].tolist())
+        wanted |= set(ids[play._card_rows(split, user, card)].tolist())
     explained = d.explain_many(shap_model, sorted(wanted))
     features = sorted({c["feature"] for e in explained for c in e["contributions"]})
     code = {f: i for i, f in enumerate(features)}
@@ -149,19 +128,56 @@ def main() -> None:
     # 4. Everything else Python computes, straight from the endpoint functions
     write_json(data / "static.json", {
         "n_rows": len(d.tx), "columns": columns, "dictionaries": dictionaries,
-        "splits": performance.splits(), "models": performance.models(None), "curves": performance.curves(None),
-        "drift": performance.drift(None), "ablations": performance.ablations(),
-        "segments": {k: performance.segments(k, None, None) for k in d.model_keys},
-        "attacks": attacks, "triage_days": play.triage_days(None, **TRIAGE_DAYS), "game": pools,
+        "models": performance.models(split), "curves": performance.curves(split),
+        "drift": performance.drift(split), "ablations": performance.ablations(),
+        "segments": {k: performance.segments(k, split, None) for k in d.model_keys},
+        "attacks": attacks, "triage_days": play.triage_days(split, **TRIAGE_DAYS), "game": pools,
         "shap": {"model": shap_model, "shards": SHAP_SHARDS, "features": features},
     })
+    return len(wanted)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("out", type=Path)
+    args = ap.parse_args()
+    out: Path = args.out
+    if out.exists() and any(out.iterdir()):
+        raise SystemExit(f"{out} is not empty")
+
+    store.load()
+    for d in store.splits.values():
+        if "sample" not in d.meta:
+            raise SystemExit(f"the static site needs a sample bundle; split {d.split} is the full one")
+
+    # 1. The dashboard
+    out.mkdir(parents=True, exist_ok=True)
+    for name in PAGE_FILES:
+        src = FRONTEND / name
+        if src.is_dir():
+            shutil.copytree(src, out / name)
+        elif src.exists():
+            shutil.copy(src, out / name)
+    page = out / "index.html"
+    html = page.read_text(encoding="utf-8")
+    if html.count("</head>") != 1:
+        raise SystemExit("index.html: expected one </head>")
+    page.write_text(html.replace("</head>", META_TAG + "</head>"), encoding="utf-8", newline="\n")
+
+    data = out / "data"
+    data.mkdir()
+    write_json(data / "splits.json", performance.splits())
+    summary = []
+    for split, d in store.splits.items():
+        n_explained = export_split(d, data / split)
+        summary.append(f"{split}: {len(d.tx):,} transactions, {n_explained:,} explained")
 
     # 5. Licence files for the derived data (they sit next to the bundle's dashboard/ folder)
     for name in ("NOTICE", "LICENSE-IBM-DATA.txt"):
         shutil.copy(settings.dashboard_dir.parent / name, data / name)
 
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
-    print(f"static site in {out}: {len(d.tx):,} transactions, {len(wanted):,} explained, {size / 1e6:.1f} MB")
+    print(f"static site in {out}: {'; '.join(summary)}; {size / 1e6:.1f} MB")
 
 
 if __name__ == "__main__":
